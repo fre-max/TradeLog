@@ -25,9 +25,24 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __hasOwnProp.call(mod, "module.exports") ? mod["module.exports"] : __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 //#endregion
-//#region .vercel/output/assets/_utils-ClIy0be_.js
+//#region .vercel/output/assets/_utils-3blnHYfN.js
 function jsonResponse(body, status = 200) {
 	return Response.json(body, { status });
+}
+var MODELES_GEMINI_OBSOLETES = new Set([
+	"gemini-1.5-flash",
+	"gemini-1.5-flash-latest",
+	"gemini-1.5-flash-8b",
+	"gemini-1.5-pro"
+]);
+/** Lu à l'exécution pour respecter les variables Vercel et ignorer les anciens modèles. */
+function getGeminiVisionModel() {
+	const modele = process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+	if (MODELES_GEMINI_OBSOLETES.has(modele)) {
+		console.warn(`⚠️ [Gemini] Modèle "${modele}" obsolète — utilisation de gemini-2.0-flash`);
+		return "gemini-2.0-flash";
+	}
+	return modele;
 }
 var SMC_ANALYSIS_PROMPT = `Tu es un assistant spécialisé en analyse de trades SMC (Smart Money Concepts).
 Analyse ce screenshot TradingView et extrais les informations suivantes en JSON.
@@ -24151,6 +24166,74 @@ var geminiApiKey = process.env.GEMINI_API_KEY;
 var genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 var supabaseUrl = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
 var supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
+async function verifierWebhook(token) {
+	return (await (await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`)).json()).result?.url || null;
+}
+/**
+* Récupère la photo la plus récente en attente dans la file Telegram.
+* getUpdates ne fonctionne que si aucun webhook n'est configuré sur le bot.
+*/
+async function getDernierMessagePhoto(token) {
+	if (await verifierWebhook(token)) throw new Error("Un webhook Telegram est actif sur ce bot. Ouvrez https://api.telegram.org/bot<VOTRE_TOKEN>/deleteWebhook dans le navigateur pour activer le Quick Entry.");
+	const updates = await (await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=100&allowed_updates=${encodeURIComponent("[\"message\"]")}`)).json();
+	if (!updates.ok || !updates.result?.length) return {
+		message: null,
+		maxUpdateId: 0
+	};
+	let dernierMessage = null;
+	let maxUpdateId = 0;
+	for (const update of updates.result) {
+		maxUpdateId = Math.max(maxUpdateId, update.update_id);
+		const msg = update.message;
+		if (!msg?.photo?.length) continue;
+		if (!dernierMessage || msg.message_id > dernierMessage.message_id) dernierMessage = msg;
+	}
+	return {
+		message: dernierMessage,
+		maxUpdateId
+	};
+}
+async function acquitterUpdates(token, maxUpdateId) {
+	if (maxUpdateId > 0) await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=${maxUpdateId + 1}`);
+}
+/**
+* Teste la connexion au bot sans appeler Gemini ni consommer la file de messages.
+* GET /api/telegram?ping=1
+*/
+async function testerConnexionBot(token) {
+	const meData = await (await fetch(`https://api.telegram.org/bot${token}/getMe`)).json();
+	if (!meData.ok) return jsonResponse({
+		mode: "ping",
+		ok: false,
+		error: "Token Telegram invalide"
+	}, 401);
+	const webhookUrl = await verifierWebhook(token);
+	const updates = await (await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=100&allowed_updates=${encodeURIComponent("[\"message\"]")}`)).json();
+	const pendingUpdates = updates.result?.length ?? 0;
+	let pendingPhotos = 0;
+	for (const update of updates.result ?? []) if (update.message?.photo?.length) pendingPhotos++;
+	return jsonResponse({
+		mode: "ping",
+		ok: true,
+		bot: {
+			id: meData.result.id,
+			username: meData.result.username,
+			name: meData.result.first_name
+		},
+		webhook: {
+			active: Boolean(webhookUrl),
+			url: webhookUrl
+		},
+		queue: {
+			pendingUpdates,
+			pendingPhotos
+		},
+		gemini: {
+			configured: Boolean(genAI),
+			model: getGeminiVisionModel()
+		}
+	});
+}
 async function analyserImageAvecGemini(imageUrl) {
 	if (!genAI) throw new Error("Clé API Gemini non configurée sur le serveur");
 	const imageRes = await fetch(imageUrl);
@@ -24158,7 +24241,7 @@ async function analyserImageAvecGemini(imageUrl) {
 	const contentType = imageRes.headers.get("content-type") || "image/jpeg";
 	const arrayBuffer = await imageRes.arrayBuffer();
 	const base64Image = Buffer.from(arrayBuffer).toString("base64");
-	const jsonMatch = (await genAI.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent([SMC_ANALYSIS_PROMPT, { inlineData: {
+	const jsonMatch = (await genAI.getGenerativeModel({ model: getGeminiVisionModel() }).generateContent([SMC_ANALYSIS_PROMPT, { inlineData: {
 		data: base64Image,
 		mimeType: contentType
 	} }])).response.text().match(/\{[\s\S]*\}/);
@@ -24172,12 +24255,18 @@ var telegram_default = { async fetch(request) {
 	if (request.method !== "GET") return jsonResponse({ error: "Méthode non autorisée" }, 405);
 	const token = process.env.TELEGRAM_BOT_TOKEN;
 	if (!token) return jsonResponse({ error: "Token du bot Telegram non configuré" }, 500);
+	const url = new URL(request.url);
+	if (url.searchParams.get("ping") === "1" || url.searchParams.get("test") === "1") return testerConnexionBot(token);
 	try {
 		console.log("📡 [Telegram API] Récupération du dernier message Telegram...");
-		const message = (await (await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=1&offset=-1`)).json()).result?.[0]?.message;
+		const { message, maxUpdateId } = await getDernierMessagePhoto(token);
 		if (!message?.photo?.length) {
 			console.log("❌ [Telegram API] Aucune image récente trouvée dans le bot");
-			return jsonResponse({ error: "Aucune image trouvée dans le bot" }, 404);
+			await acquitterUpdates(token, maxUpdateId);
+			return jsonResponse({
+				error: "Aucune image en attente. Envoie d'abord une capture au bot Telegram, puis clique à nouveau sur le bouton.",
+				hint: "Envoie une photo avec la légende \"quick\" pour un Quick Entry automatique."
+			}, 422);
 		}
 		const photo = message.photo[message.photo.length - 1];
 		const fileData = await (await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${photo.file_id}`)).json();
@@ -24191,6 +24280,7 @@ var telegram_default = { async fetch(request) {
 			const authHeader = request.headers.get("authorization");
 			if (!authHeader || !supabaseUrl || !supabaseAnonKey) {
 				console.log("⚠️ [Telegram API] Pas d'en-tête d'autorisation, renvoi des données pour création client");
+				await acquitterUpdates(token, maxUpdateId);
 				return jsonResponse({
 					mode: "quick_fallback",
 					fileUrl,
@@ -24238,6 +24328,7 @@ var telegram_default = { async fetch(request) {
 			});
 			if (imageInsertError) console.error("❌ [Telegram API] Erreur lors de l'enregistrement de l'image :", imageInsertError);
 			console.log("✅ [Telegram API] Trade rapide et étape créés en BDD. ID Trade :", insertedTrade.id);
+			await acquitterUpdates(token, maxUpdateId);
 			return jsonResponse({
 				mode: "quick",
 				tradeId: insertedTrade.id,
@@ -24248,14 +24339,17 @@ var telegram_default = { async fetch(request) {
 		}
 		if (caption === "a" || caption === "analyse") {
 			console.log("🚀 [Telegram API] Mode Analyse seule détecté");
+			const analysisData = await analyserImageAvecGemini(fileUrl);
+			await acquitterUpdates(token, maxUpdateId);
 			return jsonResponse({
 				mode: "analyse",
 				fileUrl,
-				analysis: await analyserImageAvecGemini(fileUrl),
+				analysis: analysisData,
 				date: message.date
 			});
 		}
 		console.log("🚀 [Telegram API] Mode Standard détecté (stockage d'image simple)");
+		await acquitterUpdates(token, maxUpdateId);
 		return jsonResponse({
 			mode: "standard",
 			fileUrl,

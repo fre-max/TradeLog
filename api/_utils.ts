@@ -2,8 +2,23 @@ export function jsonResponse(body: unknown, status = 200): Response {
   return Response.json(body, { status })
 }
 
-/** Modèle Gemini pour la vision (configurable via GEMINI_MODEL sur Vercel) */
-export const GEMINI_VISION_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash'
+const MODELES_GEMINI_OBSOLETES = new Set([
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash-8b',
+  'gemini-1.5-pro',
+])
+
+/** Lu à l'exécution pour respecter les variables Vercel et ignorer les anciens modèles. */
+export function getGeminiVisionModel(): string {
+  const configure = process.env.GEMINI_MODEL?.trim()
+  const modele = configure || 'gemini-2.0-flash'
+  if (MODELES_GEMINI_OBSOLETES.has(modele)) {
+    console.warn(`⚠️ [Gemini] Modèle "${modele}" obsolète — utilisation de gemini-2.0-flash`)
+    return 'gemini-2.0-flash'
+  }
+  return modele
+}
 
 export const SMC_ANALYSIS_PROMPT = `Tu es un assistant spécialisé en analyse de trades SMC (Smart Money Concepts).
 Analyse ce screenshot TradingView et extrais les informations suivantes en JSON.

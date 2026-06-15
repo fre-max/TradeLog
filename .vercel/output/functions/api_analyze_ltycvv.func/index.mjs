@@ -1,6 +1,21 @@
-//#region .vercel/output/assets/_utils-ClIy0be_.js
+//#region .vercel/output/assets/_utils-3blnHYfN.js
 function jsonResponse(body, status = 200) {
 	return Response.json(body, { status });
+}
+var MODELES_GEMINI_OBSOLETES = new Set([
+	"gemini-1.5-flash",
+	"gemini-1.5-flash-latest",
+	"gemini-1.5-flash-8b",
+	"gemini-1.5-pro"
+]);
+/** Lu à l'exécution pour respecter les variables Vercel et ignorer les anciens modèles. */
+function getGeminiVisionModel() {
+	const modele = process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+	if (MODELES_GEMINI_OBSOLETES.has(modele)) {
+		console.warn(`⚠️ [Gemini] Modèle "${modele}" obsolète — utilisation de gemini-2.0-flash`);
+		return "gemini-2.0-flash";
+	}
+	return modele;
 }
 var SMC_ANALYSIS_PROMPT = `Tu es un assistant spécialisé en analyse de trades SMC (Smart Money Concepts).
 Analyse ce screenshot TradingView et extrais les informations suivantes en JSON.
@@ -1313,7 +1328,7 @@ var analyze_default = { async fetch(request) {
 		const contentType = imageRes.headers.get("content-type") || "image/jpeg";
 		const arrayBuffer = await imageRes.arrayBuffer();
 		const base64Image = Buffer.from(arrayBuffer).toString("base64");
-		const responseText = (await genAI.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent([SMC_ANALYSIS_PROMPT, { inlineData: {
+		const responseText = (await genAI.getGenerativeModel({ model: getGeminiVisionModel() }).generateContent([SMC_ANALYSIS_PROMPT, { inlineData: {
 			data: base64Image,
 			mimeType: contentType
 		} }])).response.text();

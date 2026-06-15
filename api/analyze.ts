@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { GEMINI_VISION_MODEL, jsonResponse, SMC_ANALYSIS_PROMPT } from './_utils'
+import { getGeminiVisionModel, jsonResponse, SMC_ANALYSIS_PROMPT } from './_utils'
 
 const apiKey = process.env.GEMINI_API_KEY
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null
@@ -34,7 +34,7 @@ export default {
       const arrayBuffer = await imageRes.arrayBuffer()
       const base64Image = Buffer.from(arrayBuffer).toString('base64')
 
-      const model = genAI.getGenerativeModel({ model: GEMINI_VISION_MODEL })
+      const model = genAI.getGenerativeModel({ model: getGeminiVisionModel() })
       const result = await model.generateContent([
         SMC_ANALYSIS_PROMPT,
         {

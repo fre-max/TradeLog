@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@supabase/supabase-js'
-import { GEMINI_VISION_MODEL, jsonResponse, SMC_ANALYSIS_PROMPT } from './_utils'
+import { getGeminiVisionModel, jsonResponse, SMC_ANALYSIS_PROMPT } from './_utils'
 
 const geminiApiKey = process.env.GEMINI_API_KEY
 const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null
@@ -144,7 +144,7 @@ async function testerConnexionBot(token: string): Promise<Response> {
     },
     gemini: {
       configured: Boolean(genAI),
-      model: GEMINI_VISION_MODEL,
+      model: getGeminiVisionModel(),
     },
   })
 }
@@ -163,7 +163,7 @@ async function analyserImageAvecGemini(imageUrl: string): Promise<Record<string,
   const arrayBuffer = await imageRes.arrayBuffer()
   const base64Image = Buffer.from(arrayBuffer).toString('base64')
 
-  const model = genAI.getGenerativeModel({ model: GEMINI_VISION_MODEL })
+  const model = genAI.getGenerativeModel({ model: getGeminiVisionModel() })
   const result = await model.generateContent([
     SMC_ANALYSIS_PROMPT,
     {
