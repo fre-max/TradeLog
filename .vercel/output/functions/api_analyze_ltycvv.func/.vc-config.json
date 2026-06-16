@@ -1,6 +1,7 @@
 {
   "runtime": "nodejs24.x",
   "handler": "index.mjs",
+  "maxDuration": 60,
   "supportsResponseStreaming": true,
   "launcherType": "Nodejs",
   "shouldAddHelpers": false
