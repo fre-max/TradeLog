@@ -22,7 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
+.vercel
 # Variables d'environnement — NE JAMAIS commit les clés API !
 .env
 .env.local
