@@ -15,6 +15,9 @@ export default defineConfig(async () => {
       vercel({
         entries,
         defaultMaxDuration: 60,
+        rewrites: [
+          { source: '/((?!api/).*)', destination: '/index.html' }
+        ],
       }),
     ],
     resolve: {
