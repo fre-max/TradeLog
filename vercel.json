@@ -1,18 +1,13 @@
 {
-  "framework": null,
-  "buildCommand": "npm run build",
-  "headers": [
+  "framework": "vite",
+  "rewrites": [
     {
-      "source": "/assets/(.*).js",
-      "headers": [
-        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" }
-      ]
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
     },
     {
-      "source": "/assets/(.*).css",
-      "headers": [
-        { "key": "Content-Type", "value": "text/css; charset=utf-8" }
-      ]
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

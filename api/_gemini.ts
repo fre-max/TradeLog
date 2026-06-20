@@ -1,9 +1,5 @@
 import type { GoogleGenerativeAI } from '@google/generative-ai'
-import { Jimp } from 'jimp'
 import { getGeminiVisionModel, SMC_ANALYSIS_PROMPT } from './_utils'
-
-const MAX_IMAGE_WIDTH = 1024
-const JPEG_QUALITY = 80
 /** Délai effectif — compressé sur Vercel Hobby (timeout 10–60 s selon plan). */
 function getEffectiveRetryDelayMs(error: unknown): number {
   const parsed = parseGeminiRetryDelayMs(error)
@@ -16,8 +12,8 @@ function getEffectiveRetryDelayMs(error: unknown): number {
 const MAX_GEMINI_RETRIES = process.env.VERCEL ? 2 : 3
 const DEFAULT_RETRY_DELAY_MS = 20_000
 
-/** Redimensionne et compresse l'image avant envoi à Gemini (économie de tokens Free Tier). */
-export async function optimiserImagePourGemini(input: Buffer): Promise<{
+/** Compresse bypassée : on envoie l'image brute à Gemini pour éviter les bugs de build avec jimp. */
+export async function optimiserImagePourGemini(input: Buffer, contentType: string = 'image/jpeg'): Promise<{
   base64: string
   mimeType: string
   originalBytes: number
@@ -25,27 +21,13 @@ export async function optimiserImagePourGemini(input: Buffer): Promise<{
 }> {
   const originalBytes = input.byteLength
 
-  const image = await Jimp.read(input)
-
-  if (image.width > MAX_IMAGE_WIDTH) {
-    const ratio = MAX_IMAGE_WIDTH / image.width
-    image.resize({
-      w: MAX_IMAGE_WIDTH,
-      h: Math.max(1, Math.round(image.height * ratio)),
-    })
-  }
-
-  const optimized = await image.getBuffer('image/jpeg', { quality: JPEG_QUALITY })
-
-  console.log(
-    `🖼️ [Gemini] Image optimisée : ${originalBytes} → ${optimized.byteLength} octets (-${Math.round((1 - optimized.byteLength / originalBytes) * 100)}%)`
-  )
+  console.log(`🖼️ [Gemini] Image brute envoyée : ${originalBytes} octets`)
 
   return {
-    base64: optimized.toString('base64'),
-    mimeType: 'image/jpeg',
+    base64: input.toString('base64'),
+    mimeType: contentType,
     originalBytes,
-    optimizedBytes: optimized.byteLength,
+    optimizedBytes: originalBytes,
   }
 }
 
@@ -122,7 +104,8 @@ export async function analyserImageUrlAvecGemini(
   }
 
   const arrayBuffer = await imageRes.arrayBuffer()
-  const { base64, mimeType } = await optimiserImagePourGemini(Buffer.from(arrayBuffer))
+  const contentType = imageRes.headers.get('content-type') || 'image/jpeg'
+  const { base64, mimeType } = await optimiserImagePourGemini(Buffer.from(arrayBuffer), contentType)
 
   const result = await generateContentWithRetry(genAI, { data: base64, mimeType })
 
