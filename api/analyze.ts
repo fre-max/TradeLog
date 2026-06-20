@@ -2,11 +2,6 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { analyserImageUrlAvecGemini, isGeminiQuotaError, messageErreurQuotaGemini } from './_gemini'
 import { jsonResponse } from './_utils'
 
-// Configure cette fonction pour s'exécuter sur la runtime Edge de Vercel
-export const config = {
-  runtime: 'edge',
-}
-
 const apiKey = process.env.GEMINI_API_KEY
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null
 
