@@ -3,6 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { analyserImageUrlAvecGemini, isGeminiQuotaError, messageErreurQuotaGemini } from './_gemini'
 import { getGeminiVisionModel, jsonResponse } from './_utils'
 
+// Configure cette fonction pour s'exécuter sur la runtime Edge de Vercel
+export const config = {
+  runtime: 'edge',
+}
+
 const geminiApiKey = process.env.GEMINI_API_KEY
 const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null
 
