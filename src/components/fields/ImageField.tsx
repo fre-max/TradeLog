@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import { useTelegram } from '@/hooks/useTelegram'
 import { uploadImage, buildImagePath } from '@/lib/storage'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
+import { file } from 'zod'
 
 interface ImageFieldProps {
   tradeId: string
@@ -23,7 +25,7 @@ export function ImageField({ tradeId, stepId, onUpload }: ImageFieldProps) {
       const { data, error } = await supabase.functions.invoke('telegram', {
         body: { proxy_image_url: preview }
       })
-      
+
       if (error) throw error
 
       // Note: supabase.functions.invoke parse le JSON par défaut.
@@ -31,20 +33,18 @@ export function ImageField({ tradeId, stepId, onUpload }: ImageFieldProps) {
       // on convertit la réponse. En l'occurrence, le client Supabase supporte 
       // de retourner des Blobs, mais il faut s'assurer du bon fonctionnement.
       // Une approche plus sûre pour un Blob est d'utiliser fetch avec l'URL de la fonction.
-      const functionUrl = \`\${supabase.supabaseUrl}/functions/v1/telegram\`
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram`
       const res = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': \`Bearer \${(await supabase.auth.getSession()).data.session?.access_token}\`
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
         },
         body: JSON.stringify({ proxy_image_url: preview })
       })
-      
       if (!res.ok) throw new Error('Erreur téléchargement image')
       const blob = await res.blob()
-      
-      const path = buildImagePath(tradeId, stepId, \`telegram-\${Date.now()}.jpg\`)
+      const path = buildImagePath(tradeId, stepId, `telegram-${Date.now()}.jpg`)
       const publicUrl = await uploadImage(blob, path)
       onUpload(publicUrl)
       clearPreview()

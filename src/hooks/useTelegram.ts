@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useState } from 'react'
 import type { GeminiAnalysis } from './useQuickEntry'
 
 // ─── Types pour l'état interne du hook ───────────────────────────────────────
@@ -59,7 +59,7 @@ export function useTelegram() {
       })
 
       if (error) {
-        throw new Error(error.message || 'Erreur lors de l\\'appel à la fonction telegram')
+        throw new Error(error.message || 'Erreur lors de appel à la fonction telegram')
       }
 
       console.log('✅ [useTelegram] Réponse reçue avec succès, mode :', data.mode)
