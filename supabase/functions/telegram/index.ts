@@ -188,10 +188,29 @@ Deno.serve(async (req) => {
     try {
       const proxyRes = await fetch(proxyImageUrl)
       if (!proxyRes.ok) throw new Error('Erreur proxy')
+      
+      let contentType = proxyRes.headers.get('content-type') || 'image/jpeg'
+      // Afin d'aider le navigateur à afficher l'image correctement au lieu de la télécharger,
+      // on remplace le type "application/octet-stream" de Telegram par le bon type MIME image.
+      if (contentType === 'application/octet-stream' || !contentType.startsWith('image/')) {
+        const extension = proxyImageUrl.split('.').pop()?.split('?')[0]?.toLowerCase()
+        if (extension === 'png') {
+          contentType = 'image/png'
+        } else if (extension === 'webp') {
+          contentType = 'image/webp'
+        } else if (extension === 'heic') {
+          contentType = 'image/heic'
+        } else if (extension === 'heif') {
+          contentType = 'image/heif'
+        } else {
+          contentType = 'image/jpeg'
+        }
+      }
+
       return new Response(proxyRes.body, {
         headers: {
           ...corsHeaders,
-          'Content-Type': proxyRes.headers.get('content-type') || 'image/jpeg',
+          'Content-Type': contentType,
           'Access-Control-Allow-Origin': '*'
         }
       })

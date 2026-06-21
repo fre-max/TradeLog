@@ -93,9 +93,26 @@ export async function analyserImageUrlAvecGemini(
   }
 
   const arrayBuffer = await imageRes.arrayBuffer()
-  const contentType = imageRes.headers.get('content-type') || 'image/jpeg'
   
-  console.log(`🖼️ [Gemini] Image brute téléchargée : ${arrayBuffer.byteLength} octets`)
+  let contentType = imageRes.headers.get('content-type') || 'image/jpeg'
+  // Les serveurs comme Telegram renvoient souvent "application/octet-stream", ce qui fait échouer Gemini.
+  // On déduit donc le bon type MIME à partir de l'extension de l'URL pour que Gemini puisse le décoder.
+  if (contentType === 'application/octet-stream' || !contentType.startsWith('image/')) {
+    const extension = imageUrl.split('.').pop()?.split('?')[0]?.toLowerCase()
+    if (extension === 'png') {
+      contentType = 'image/png'
+    } else if (extension === 'webp') {
+      contentType = 'image/webp'
+    } else if (extension === 'heic') {
+      contentType = 'image/heic'
+    } else if (extension === 'heif') {
+      contentType = 'image/heif'
+    } else {
+      contentType = 'image/jpeg'
+    }
+  }
+  
+  console.log(`🖼️ [Gemini] Image brute téléchargée : ${arrayBuffer.byteLength} octets, Type MIME configuré : ${contentType}`)
   const base64 = arrayBufferToBase64(arrayBuffer)
 
   const result = await generateContentWithRetry(ai, { data: base64, mimeType: contentType })
