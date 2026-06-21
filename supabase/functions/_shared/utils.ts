@@ -34,26 +34,52 @@ export function getGeminiVisionModel(): string {
   return modele;
 }
 
-export const SMC_ANALYSIS_PROMPT = `Tu es un assistant spécialisé en analyse de trades SMC (Smart Money Concepts).
-Analyse ce screenshot de graphique de trading (TradingView, MetaTrader, etc.) et extrais les informations suivantes sous forme de JSON.
-La position peut être ouverte ou déjà fermée sur le graphique. Regarde attentivement l'axe du temps (horizontal, en bas) et les annotations pour extraire les heures et dates avec précision.
+export const SMC_ANALYSIS_PROMPT = `Tu es un assistant IA spécialisé en analyse de graphiques et de positions de trading (principalement issus de TradingView, MetaTrader, etc.).
+Analyse cette capture d'écran et extrais avec une précision chirurgicale les données suivantes.
+Reste extrêmement attentif aux petits détails textuels et aux étiquettes de couleur.
 
-Retourne UNIQUEMENT ce JSON, sans texte supplémentaire :
+Voici comment localiser les informations sur l'image :
+1. **Actif & Timeframe (En haut à gauche du graphique) :**
+   - Cherche le texte de la paire de devises (ex: "British Pound / New Zealand Dollar" ou "GBPNZD", "Gold / U.S. Dollar" ou "XAUUSD").
+   - Traduis les noms longs en symboles de 6 lettres (ex: "British Pound / New Zealand Dollar" -> "GBPNZD", "Gold" -> "XAUUSD", "Euro / U.S. Dollar" -> "EURUSD").
+   - Juste à côté, repère l'unité de temps (ex: "4h", "1h", "M15", "5m").
+2. **Direction de la Position (Outil de position Long/Short de TradingView) :**
+   - L'outil dessine une zone translucide bicolore (généralement verte et rouge) :
+     - Si la zone verte (profit) est en bas et rouge (perte) en haut : la direction est "short".
+     - Si la zone verte (profit) est en haut et rouge (perte) en bas : la direction est "long".
+3. **Prix clés (Sur l'axe vertical tout à fait à droite) :**
+   - **Prix d'entrée :** Repère l'étiquette grise, bleue ou sombre située exactement à la séparation entre la zone rouge et verte sur l'axe des prix.
+   - **Stop Loss (SL) :** Repère l'étiquette rouge/orange sur l'axe des prix à droite, ou lis la valeur dans la petite étiquette de texte "Stop: X.XXXXX" aux extrémités de l'outil.
+   - **Take Profit (TP) :** Repère l'étiquette verte sur l'axe des prix à droite, ou lis la valeur "Target: X.XXXXX" aux extrémités de l'outil.
+4. **Ratio Risk/Reward (R:R) :**
+   - Regarde le rectangle de statut au centre de l'outil de position (au milieu de la séparation rouge/verte).
+   - Lis la valeur écrite à côté de "Risk/reward ratio:" (ex: "2.64"). C'est le ratio planifié (rr).
+5. **Dénouement & Résultat :**
+   - Observe les bougies japonaises (le prix) qui se développent vers la droite.
+   - Si les bougies traversent entièrement la boîte verte et touchent ou dépassent le niveau du Take Profit, le résultat est "win". Le R:R réalisé (rr_realized) est alors égal au Risk/reward ratio planifié.
+   - Si les bougies montent ou descendent dans la boîte rouge et touchent le Stop Loss, le résultat est "loss" (le R:R réalisé est de -1).
+   - Si le trade est coupé manuellement ou fini à l'équilibre, le résultat est "breakeven" (le R:R réalisé est de 0 ou proche de 0).
+6. **Date & Heure (Sur l'axe horizontal tout à fait en bas) :**
+   - Cherche les étiquettes de couleur (bleues, grises ou sombres) sur l'axe du temps en bas.
+   - L'étiquette de gauche correspond à l'entrée/début du trade (date_backtested et entry_time). Convertis le jour (ex: "Thu 02 Apr '26" -> "2026-04-02") et note l'heure (ex: "01:00").
+   - L'étiquette de droite correspond à la sortie/fin du trade (exit_time) (ex: "Fri 17 Apr '26 09:00" -> "09:00").
+
+Retourne UNIQUEMENT ce format JSON, sans aucun texte markdown (pas de \`\`\`json) ou texte d'explication :
 {
-  "pair": "paire tradée (ex: XAUUSD, EURUSD...)",
-  "direction": "long ou short",
+  "pair": "symbole standard à 6 lettres ou plus (ex: GBPNZD, XAUUSD...)",
+  "direction": "long" ou "short",
   "entry_price": nombre ou null,
   "sl": nombre ou null,
   "tp": nombre ou null,
-  "timeframe": "timeframe visible (ex: M15, H1...)",
-  "session": "Asian, London, NY ou London/NY selon l'heure visible, ou null",
-  "rr": nombre calculé ou planifié depuis entrée/SL/TP (ex: 3.5) ou null,
-  "rr_realized": nombre de R:R réellement réalisé (ex: 3.5 si TP, -1 si SL, 0 si BE, ou valeur manuelle visible) ou null,
-  "result": "win, loss ou breakeven selon le dénouement visible, ou null",
-  "date_backtested": "date historique exacte où le trade a commencé (format AAAA-MM-JJ, ex: 2026-03-15) extraite de l'axe des temps ou des annotations, ou null",
-  "entry_time": "heure exacte d'entrée / début de la position (format HH:MM, ex: 14:30) lue sur l'axe horizontal, ou null",
-  "exit_time": "heure exacte de sortie / fin de la position (format HH:MM, ex: 15:15) lue sur l'axe horizontal, ou null",
-  "patterns": ["patterns SMC visibles si annotés sur le chart"],
+  "timeframe": "timeframe visible (ex: M15, H4, H1...)",
+  "session": "Asian, London, NY ou London/NY selon l'heure d'entrée, ou null",
+  "rr": nombre de R:R planifié (ex: 2.64) ou null,
+  "rr_realized": nombre de R:R réellement réalisé (ex: 2.64 si TP, -1 si SL, 0 si BE) ou null,
+  "result": "win", "loss" ou "breakeven" ou null,
+  "date_backtested": "date de début au format AAAA-MM-JJ (ex: 2026-04-02) ou null",
+  "entry_time": "heure d'entrée au format HH:MM (ex: 01:00) ou null",
+  "exit_time": "heure de sortie au format HH:MM (ex: 09:00) ou null",
+  "patterns": ["patterns SMC visibles si annotés"],
   "confidence": {
     "pair": 0.0 à 1.0,
     "direction": 0.0 à 1.0,
