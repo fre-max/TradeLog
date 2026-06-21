@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import type { TradeWithSteps } from '@/types'
 
 // ─── Type pour les données extraites par Gemini Vision ────────────────────────
 // Représente le JSON retourné par api/analyze.ts ou api/telegram.ts
@@ -13,6 +14,11 @@ export interface GeminiAnalysis {
   timeframe: string | null
   session: string | null
   rr: number | null
+  rr_realized?: number | null
+  result?: 'win' | 'loss' | 'breakeven' | null
+  date_backtested?: string | null
+  entry_time?: string | null
+  exit_time?: string | null
   patterns: string[]
   confidence: {
     pair: number
@@ -20,6 +26,9 @@ export interface GeminiAnalysis {
     entry_price: number
     sl: number
     tp: number
+    date_backtested?: number
+    entry_time?: number
+    exit_time?: number
   }
 }
 
@@ -28,6 +37,7 @@ export interface GeminiAnalysis {
 export interface QuickEntryResult {
   tradeId: string
   analysis: GeminiAnalysis
+  trade: TradeWithSteps
 }
 
 /**
@@ -61,18 +71,22 @@ export function useQuickEntry() {
       }
       console.log('👤 [useQuickEntry] Utilisateur connecté :', user.id)
 
+      // Auto-déduire exit_type
+      const autoExitType = analysis.result === 'win' ? 'tp' : (analysis.result === 'loss' ? 'sl' : (analysis.result === 'breakeven' ? 'breakeven' : null))
+
       // 2️⃣ Créer le trade principal avec status 'quick'
       const tradeData = {
         user_id: user.id,
         pair: analysis.pair || 'XAUUSD',
         direction: (analysis.direction || 'long') as 'long' | 'short',
         session: analysis.session || 'London',
-        date_backtested: new Date().toISOString().split('T')[0],
-        entry_time: null,
-        result: null,
+        date_backtested: analysis.date_backtested || new Date().toISOString().split('T')[0],
+        entry_time: analysis.entry_time || null,
+        exit_time: analysis.exit_time || null,
+        result: analysis.result || null,
         rr_planned: analysis.rr ?? null,
-        rr_realized: null,
-        exit_type: null,
+        rr_realized: analysis.rr_realized ?? null,
+        exit_type: autoExitType,
         emotion: null,
         status: 'quick' as const,
       }
@@ -103,6 +117,8 @@ export function useQuickEntry() {
           analysis.entry_price ? `Entrée : ${analysis.entry_price}` : null,
           analysis.sl ? `SL : ${analysis.sl}` : null,
           analysis.tp ? `TP : ${analysis.tp}` : null,
+          analysis.exit_time ? `Sortie : ${analysis.exit_time}` : null,
+          analysis.rr_realized ? `R:R Réalisé : ${analysis.rr_realized}` : null,
         ].filter(Boolean).join('\n') || null,
         // On stocke les données Gemini + les niveaux de confiance dans fields
         fields: {
@@ -111,6 +127,8 @@ export function useQuickEntry() {
           sl: analysis.sl,
           tp: analysis.tp,
           rr: analysis.rr,
+          rr_realized: analysis.rr_realized,
+          exit_time: analysis.exit_time,
           patterns: analysis.patterns,
           confidence: analysis.confidence,
         },
@@ -139,19 +157,59 @@ export function useQuickEntry() {
         })
 
       if (imageError) {
-        // Erreur non bloquante — le trade existe, juste l'image n'est pas attachée
         console.error('⚠️ [useQuickEntry] Erreur lors de l\'attachement de l\'image :', imageError)
       } else {
         console.log('✅ [useQuickEntry] Image Telegram attachée à l\'étape')
       }
 
+      // 5️⃣ Déclencher automatiquement la détection des news économiques
+      if (insertedTrade.date_backtested && insertedTrade.entry_time && insertedTrade.exit_time) {
+        try {
+          console.log('📡 [useQuickEntry] Déclenchement de la détection des news...')
+          const session = await supabase.auth.getSession()
+          const token = session.data.session?.access_token
+          
+          await supabase.functions.invoke('detect-news', {
+            body: {
+              trade_id: insertedTrade.id,
+              pair: insertedTrade.pair,
+              date: insertedTrade.date_backtested,
+              entry_time: insertedTrade.entry_time,
+              exit_time: insertedTrade.exit_time,
+            },
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined
+          })
+          console.log('✅ [useQuickEntry] Détection des news lancée avec succès')
+        } catch (newsErr) {
+          console.error('❌ [useQuickEntry] Échec de l\'appel à detect-news :', newsErr)
+        }
+      }
+
+      // 6️⃣ Recharger le trade complet avec étapes et images pour le renvoyer
+      const { data: fullTrade, error: refetchError } = await supabase
+        .from('trades')
+        .select(`
+          *,
+          steps (
+            *,
+            images: step_images (*)
+          )
+        `)
+        .eq('id', insertedTrade.id)
+        .single()
+
+      if (refetchError || !fullTrade) {
+        throw refetchError || new Error('Erreur lors du rechargement final du trade')
+      }
+
       return {
         tradeId: insertedTrade.id,
         analysis,
+        trade: fullTrade as TradeWithSteps,
       }
     },
 
-    // 5️⃣ Après la création réussie, invalider le cache pour rafraîchir le tableau
+    // 7️⃣ Après la création réussie, invalider le cache pour rafraîchir le tableau
     onSuccess: (resultat) => {
       console.log('✅ [useQuickEntry] Trade rapide créé ! Invalidation du cache React Query...')
       queryClient.invalidateQueries({ queryKey: ['trades'] })

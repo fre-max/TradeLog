@@ -5,7 +5,7 @@ export const DirectionEnum = z.enum(['long','short'])
 export const SessionEnum = z.enum(['Asian','London','NY','London/NY'])
 export const ResultEnum = z.enum(['win','loss','breakeven'])
 export const ExitTypeEnum = z.enum(['tp','sl','breakeven','trailing','manual'])
-export const StepTypeEnum = z.enum(['biais','poi','entry','result','custom'])
+export const StepTypeEnum = z.enum(['biais','poi','entry','result','custom','news'])
 export const ImageSourceEnum = z.enum(['telegram','upload','url'])
 export const StatusEnum = z.enum(['quick', 'in_progress', 'complete'])
 export const EmotionEnum = z.enum([
@@ -21,6 +21,7 @@ export const TradeSchema = z.object({
   session: SessionEnum,
   date_backtested: z.string(),
   entry_time: z.string().optional().nullable(),
+  exit_time: z.string().optional().nullable(),
   result: ResultEnum.optional().nullable(),
   rr_planned: z.number().positive().optional().nullable(),
   rr_realized: z.number().optional().nullable(),

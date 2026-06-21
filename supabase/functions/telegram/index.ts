@@ -275,17 +275,21 @@ Deno.serve(async (req) => {
         throw new Error('JWT invalide ou utilisateur non authentifié côté Supabase')
       }
 
+      const analysis = analysisData as any
+      const autoExitType = analysis.result === 'win' ? 'tp' : (analysis.result === 'loss' ? 'sl' : (analysis.result === 'breakeven' ? 'breakeven' : null))
+      
       const tradeData = {
         user_id: user.id,
-        pair: (analysisData.pair as string) || 'XAUUSD',
-        direction: ((analysisData.direction as string) || 'long') as 'long' | 'short',
-        session: (analysisData.session as string) || 'London',
-        date_backtested: new Date().toISOString().split('T')[0],
-        entry_time: null,
-        result: null,
-        rr_planned: analysisData.rr ? parseFloat(String(analysisData.rr)) : null,
-        rr_realized: null,
-        exit_type: null,
+        pair: analysis.pair || 'XAUUSD',
+        direction: (analysis.direction || 'long') as 'long' | 'short',
+        session: analysis.session || 'London',
+        date_backtested: analysis.date_backtested || new Date().toISOString().split('T')[0],
+        entry_time: analysis.entry_time || null,
+        exit_time: analysis.exit_time || null,
+        result: analysis.result || null,
+        rr_planned: analysis.rr ? parseFloat(String(analysis.rr)) : null,
+        rr_realized: analysis.rr_realized ? parseFloat(String(analysis.rr_realized)) : null,
+        exit_type: autoExitType,
         emotion: null,
         status: 'quick' as const,
       }
@@ -300,7 +304,6 @@ Deno.serve(async (req) => {
         throw tradeInsertError || new Error('Erreur lors de la création du trade')
       }
 
-      const analysis = analysisData as any
       const stepData = {
         trade_id: insertedTrade.id,
         order: 0,
@@ -314,6 +317,8 @@ Deno.serve(async (req) => {
           analysis.entry_price ? `Entrée : ${analysis.entry_price}` : null,
           analysis.sl ? `SL : ${analysis.sl}` : null,
           analysis.tp ? `TP : ${analysis.tp}` : null,
+          analysis.exit_time ? `Sortie : ${analysis.exit_time}` : null,
+          analysis.rr_realized ? `R:R Réalisé : ${analysis.rr_realized}` : null,
         ].filter(Boolean).join('\n') || null,
         fields: {
           is_quick_entry: true,
@@ -321,6 +326,8 @@ Deno.serve(async (req) => {
           sl: analysis.sl,
           tp: analysis.tp,
           rr: analysis.rr,
+          rr_realized: analysis.rr_realized,
+          exit_time: analysis.exit_time,
           patterns: analysis.patterns,
           confidence: analysis.confidence,
         },
@@ -349,6 +356,37 @@ Deno.serve(async (req) => {
       }
 
       console.log('✅ [Telegram API] Trade rapide et étape créés en BDD. ID Trade :', insertedTrade.id)
+
+      // 5️⃣ Déclenchement automatique et asynchrone de la détection des news
+      if (insertedTrade.date_backtested && insertedTrade.entry_time && insertedTrade.exit_time) {
+        const functionUrl = `${supabaseUrl}/functions/v1/detect-news`
+        console.log(`📡 [Telegram API] Déclenchement automatique de la détection des news sur ${functionUrl}...`)
+        
+        fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authHeader || '',
+          },
+          body: JSON.stringify({
+            trade_id: insertedTrade.id,
+            pair: insertedTrade.pair,
+            date: insertedTrade.date_backtested,
+            entry_time: insertedTrade.entry_time,
+            exit_time: insertedTrade.exit_time,
+          })
+        })
+        .then(async (res) => {
+          if (!res.ok) {
+            console.error(`❌ [Telegram API] Réponse KO de detect-news (${res.status}) :`, await res.text())
+          } else {
+            console.log('✅ [Telegram API] News détectées et enregistrées avec succès en tâche de fond')
+          }
+        })
+        .catch(err => {
+          console.error('❌ [Telegram API] Erreur réseau lors de l\'appel à detect-news :', err)
+        })
+      }
 
       await acquitterUpdates(token, maxUpdateId)
       return jsonResponse({

@@ -10,6 +10,7 @@ create table trades (
   session         text not null,
   date_backtested date not null,
   entry_time      time,
+  exit_time       time,
   result          text check (result in ('win','loss','breakeven')),
   rr_planned      numeric(5,2),
   rr_realized     numeric(5,2),

@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils'
 import { StepBlock } from './StepBlock'
 import { supabase } from '@/lib/supabase'
 import { useUpdateTrade } from '@/hooks/useTrades'
+import { useQuickEntry } from '@/hooks/useQuickEntry'
+import { ImageAnalysisUpload } from './ImageAnalysisUpload'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   buildStepPayloads,
@@ -31,15 +33,18 @@ export function TradeDrawer() {
   const editingTrade = useUIStore((state) => state.editingTrade)
   const closeNewTrade = useUIStore((state) => state.closeNewTrade)
   const openDetail = useUIStore((state) => state.openDetail)
+  const openEditTrade = useUIStore((state) => state.openEditTrade)
   const addToast = useUIStore((state) => state.addToast)
 
   const isEditMode = Boolean(editingTrade)
   const { mutateAsync: updateTrade, isPending: isUpdating } = useUpdateTrade()
+  const { mutateAsync: creerQuickEntry, isPending: isCreatingQuick } = useQuickEntry()
   const queryClient = useQueryClient()
 
   const [formData, setFormData] = useState<FormDataState>(INITIAL_FORM_STATE)
   const [stepIds, setStepIds] = useState<EditStepIds>({})
   const [saving, setSaving] = useState(false)
+  const [manualMode, setManualMode] = useState(false)
 
   useEffect(() => {
     if (!isNewTradeOpen) return
@@ -47,14 +52,16 @@ export function TradeDrawer() {
     if (editingTrade) {
       setFormData(tradeToFormData(editingTrade))
       setStepIds(extractStepIds(editingTrade))
+      setManualMode(true)
     } else {
       setFormData(INITIAL_FORM_STATE)
       setStepIds({})
+      setManualMode(false)
     }
   }, [isNewTradeOpen, editingTrade])
 
   const handleClose = () => {
-    if (!saving && !isUpdating) {
+    if (!saving && !isUpdating && !isCreatingQuick) {
       closeNewTrade()
     }
   }
@@ -124,7 +131,7 @@ export function TradeDrawer() {
     }
   }
 
-  const enCours = saving || isUpdating
+  const enCours = saving || isUpdating || isCreatingQuick
 
   return (
     <>
@@ -167,37 +174,54 @@ export function TradeDrawer() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {DEFAULT_STEPS.map((step, index) => (
-            <StepBlock
-              key={step.id}
-              number={index + 1}
-              title={step.title}
-              type={step.type}
-              defaultOpen={index === 0}
-              formData={formData}
-              setFormData={setFormData}
+          {!isEditMode && !manualMode ? (
+            <ImageAnalysisUpload
+              onAnalysisComplete={async ({ analysis, imageUrl }) => {
+                try {
+                  const res = await creerQuickEntry({ analysis, imageUrl })
+                  openEditTrade(res.trade)
+                  addToast('Graphique analysé et trade créé ! Complète les détails.', 'success')
+                } catch (e: any) {
+                  addToast(e.message || "Erreur lors de la création du trade par IA", 'error')
+                }
+              }}
+              onManualMode={() => setManualMode(true)}
             />
-          ))}
+          ) : (
+            DEFAULT_STEPS.map((step, index) => (
+              <StepBlock
+                key={step.id}
+                number={index + 1}
+                title={step.title}
+                type={step.type}
+                defaultOpen={index === 0}
+                formData={formData}
+                setFormData={setFormData}
+              />
+            ))
+          )}
         </div>
 
-        <div className="flex justify-end gap-2.5 px-5 py-4 border-t border-border flex-shrink-0">
-          <button
-            onClick={() => {
-              if (!enCours) resetAndClose()
-            }}
-            disabled={enCours}
-            className="px-4 py-2 border border-border2 rounded-md text-txt2 text-[13px] font-medium hover:bg-surface2 hover:text-txt transition-colors disabled:opacity-50"
-          >
-            Annuler
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={enCours}
-            className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {enCours ? 'Enregistrement...' : isEditMode ? 'Mettre à jour' : 'Enregistrer'}
-          </button>
-        </div>
+        {(isEditMode || manualMode) && (
+          <div className="flex justify-end gap-2.5 px-5 py-4 border-t border-border flex-shrink-0">
+            <button
+              onClick={() => {
+                if (!enCours) resetAndClose()
+              }}
+              disabled={enCours}
+              className="px-4 py-2 border border-border2 rounded-md text-txt2 text-[13px] font-medium hover:bg-surface2 hover:text-txt transition-colors disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={enCours}
+              className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {enCours ? 'Enregistrement...' : isEditMode ? 'Mettre à jour' : 'Enregistrer'}
+            </button>
+          </div>
+        )}
       </aside>
     </>
   )

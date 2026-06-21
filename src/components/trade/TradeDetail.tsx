@@ -35,6 +35,7 @@ export function TradeDetail() {
   const poi = selectedTrade.steps.find((s) => s.type === 'poi')
   const entry = selectedTrade.steps.find((s) => s.type === 'entry')
   const review = selectedTrade.steps.find((s) => s.type === 'result')
+  const news = selectedTrade.steps.find((s) => s.type === 'news')
 
   // Extraire les données Gemini si le trade est un Quick Entry
   // Les données sont stockées dans fields.extracted de l'étape 'biais'
@@ -113,15 +114,86 @@ export function TradeDetail() {
           <Section title="📌 Infos générales">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Info label="Paire" value={selectedTrade.pair} />
-              <Info label="Direction" value={selectedTrade.direction} />
+              <Info label="Direction" value={selectedTrade.direction === 'long' ? 'Achat (Long)' : 'Vente (Short)'} />
               <Info label="Session" value={selectedTrade.session} />
               <Info label="Date" value={formatDate(selectedTrade.date_backtested)} />
-              <Info label="Heure" value={selectedTrade.entry_time ?? '—'} />
-              <Info label="Sortie via" value={selectedTrade.exit_type ?? '—'} />
+              <Info label="Début" value={selectedTrade.entry_time ?? '—'} />
+              <Info label="Fin" value={selectedTrade.exit_time ?? '—'} />
               <Info label="R:R prévu" value={formatRR(selectedTrade.rr_planned)} />
               <Info label="R:R réalisé" value={formatRR(selectedTrade.rr_realized)} highlight />
             </div>
           </Section>
+
+          {/* Annonces Économiques */}
+          {news && (
+            <Section title="📢 Annonces Économiques">
+              <div className="flex flex-col gap-3">
+                {news.fields && (news.fields as any).news && (news.fields as any).news.length > 0 ? (
+                  <div className="flex flex-col gap-2.5">
+                    {(news.fields as any).news.map((item: any, idx: number) => {
+                      const estHigh = item.impact === 'High'
+                      return (
+                        <div
+                          key={idx}
+                          className="bg-bg border border-border2 rounded-lg p-3 flex flex-col md:flex-row md:items-center gap-3 transition-colors hover:border-accent/35"
+                        >
+                          {/* Badge Impact & Devise */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span
+                              className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase border",
+                                estHigh
+                                  ? "bg-loss/10 text-loss border-loss/25"
+                                  : "bg-[#f5a623]/10 text-[#f5a623] border-[#f5a623]/25"
+                              )}
+                            >
+                              {estHigh ? '🔴 Fort' : '🟠 Moyen'}
+                            </span>
+                            <span className="text-txt font-semibold text-[13px]">{item.currency}</span>
+                          </div>
+
+                          {/* Événement & Heure */}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-txt font-medium text-[13px] truncate">{item.name}</h4>
+                            <p className="text-txt3 text-[11px]">Publié à : {item.time || '—'}</p>
+                          </div>
+
+                          {/* Valeurs Réel vs Prévu */}
+                          <div className="flex items-center gap-3 text-[11.5px] bg-surface border border-border2 rounded px-2 py-1 flex-shrink-0">
+                            <div>
+                              <span className="text-txt3">Réel:</span>{' '}
+                              <span className="font-semibold text-txt">{item.actual || '—'}</span>
+                            </div>
+                            <div className="border-l border-border2 h-3.5"></div>
+                            <div>
+                              <span className="text-txt3">Prévu:</span>{' '}
+                              <span className="font-medium text-txt2">{item.forecast || '—'}</span>
+                            </div>
+                            <div className="border-l border-border2 h-3.5"></div>
+                            <div>
+                              <span className="text-txt3">Préc:</span>{' '}
+                              <span className="font-medium text-txt2">{item.previous || '—'}</span>
+                            </div>
+                          </div>
+
+                          {/* Interprétation de l'IA */}
+                          {item.interpretation && (
+                            <div className="text-[11.5px] text-txt2 border-l-2 border-accent/20 pl-2.5 italic md:max-w-[280px] flex-shrink-0">
+                              {item.interpretation}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-txt2 text-[13px] leading-relaxed">
+                    {news.notes ?? "Aucune annonce économique majeure n'a été détectée dans l'intervalle de cette position."}
+                  </p>
+                )}
+              </div>
+            </Section>
+          )}
 
           {/* Biais */}
           {biais && (

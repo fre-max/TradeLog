@@ -35,8 +35,8 @@ export function getGeminiVisionModel(): string {
 }
 
 export const SMC_ANALYSIS_PROMPT = `Tu es un assistant spécialisé en analyse de trades SMC (Smart Money Concepts).
-Analyse ce screenshot TradingView et extrais les informations suivantes en JSON.
-La position peut être ouverte ou récemment fermée/manuelle sur le graphique.
+Analyse ce screenshot de graphique de trading (TradingView, MetaTrader, etc.) et extrais les informations suivantes sous forme de JSON.
+La position peut être ouverte ou déjà fermée sur le graphique. Regarde attentivement l'axe du temps (horizontal, en bas) et les annotations pour extraire les heures et dates avec précision.
 
 Retourne UNIQUEMENT ce JSON, sans texte supplémentaire :
 {
@@ -47,13 +47,21 @@ Retourne UNIQUEMENT ce JSON, sans texte supplémentaire :
   "tp": nombre ou null,
   "timeframe": "timeframe visible (ex: M15, H1...)",
   "session": "Asian, London, NY ou London/NY selon l'heure visible, ou null",
-  "rr": nombre calculé depuis entrée/SL/TP ou null,
+  "rr": nombre calculé ou planifié depuis entrée/SL/TP (ex: 3.5) ou null,
+  "rr_realized": nombre de R:R réellement réalisé (ex: 3.5 si TP, -1 si SL, 0 si BE, ou valeur manuelle visible) ou null,
+  "result": "win, loss ou breakeven selon le dénouement visible, ou null",
+  "date_backtested": "date historique exacte où le trade a commencé (format AAAA-MM-JJ, ex: 2026-03-15) extraite de l'axe des temps ou des annotations, ou null",
+  "entry_time": "heure exacte d'entrée / début de la position (format HH:MM, ex: 14:30) lue sur l'axe horizontal, ou null",
+  "exit_time": "heure exacte de sortie / fin de la position (format HH:MM, ex: 15:15) lue sur l'axe horizontal, ou null",
   "patterns": ["patterns SMC visibles si annotés sur le chart"],
   "confidence": {
     "pair": 0.0 à 1.0,
     "direction": 0.0 à 1.0,
     "entry_price": 0.0 à 1.0,
     "sl": 0.0 à 1.0,
-    "tp": 0.0 à 1.0
+    "tp": 0.0 à 1.0,
+    "date_backtested": 0.0 à 1.0,
+    "entry_time": 0.0 à 1.0,
+    "exit_time": 0.0 à 1.0
   }
 }`;
