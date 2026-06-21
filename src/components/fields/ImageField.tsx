@@ -19,10 +19,32 @@ export function ImageField({ tradeId, stepId, onUpload }: ImageFieldProps) {
     if (!preview) return
     setUploading(true)
     try {
-      // Fetch the image blob via our serverless function proxy
-      const res = await fetch(`/api/telegram/image?url=${encodeURIComponent(preview)}`)
+      // Fetch the image blob via our Supabase Edge Function proxy
+      const { data, error } = await supabase.functions.invoke('telegram', {
+        body: { proxy_image_url: preview }
+      })
+      
+      if (error) throw error
+
+      // Note: supabase.functions.invoke parse le JSON par défaut.
+      // Pour forcer la lecture en tant que Blob, on utilise une autre méthode ou 
+      // on convertit la réponse. En l'occurrence, le client Supabase supporte 
+      // de retourner des Blobs, mais il faut s'assurer du bon fonctionnement.
+      // Une approche plus sûre pour un Blob est d'utiliser fetch avec l'URL de la fonction.
+      const functionUrl = \`\${supabase.supabaseUrl}/functions/v1/telegram\`
+      const res = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': \`Bearer \${(await supabase.auth.getSession()).data.session?.access_token}\`
+        },
+        body: JSON.stringify({ proxy_image_url: preview })
+      })
+      
+      if (!res.ok) throw new Error('Erreur téléchargement image')
       const blob = await res.blob()
-      const path = buildImagePath(tradeId, stepId, `telegram-${Date.now()}.jpg`)
+      
+      const path = buildImagePath(tradeId, stepId, \`telegram-\${Date.now()}.jpg\`)
       const publicUrl = await uploadImage(blob, path)
       onUpload(publicUrl)
       clearPreview()

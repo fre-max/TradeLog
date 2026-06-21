@@ -47,55 +47,27 @@ export function useTelegram() {
     analysis: null,
   })
 
-  // Appelle /api/telegram et met à jour l'état selon le mode retourné par le serveur
+  // Appelle la fonction Edge Supabase telegram et met à jour l'état selon le mode retourné
   const fetchLastMessage = async (stepId?: string): Promise<TelegramState> => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      console.log('📡 [useTelegram] Appel de /api/telegram...')
+      console.log('📡 [useTelegram] Appel de la fonction Edge Supabase telegram...')
 
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: HeadersInit = {}
-      if (session?.access_token) {
-        headers.Authorization = `Bearer ${session.access_token}`
+      const { data, error } = await supabase.functions.invoke('telegram', {
+        body: stepId ? { step_id: stepId } : {}
+      })
+
+      if (error) {
+        throw new Error(error.message || 'Erreur lors de l\\'appel à la fonction telegram')
       }
 
-      const apiUrl = stepId ? `/api/telegram?step_id=${encodeURIComponent(stepId)}` : '/api/telegram'
-      const res = await fetch(apiUrl, { headers })
-
-      console.log(`📡 [useTelegram] Statut réponse : ${res.status} ${res.statusText}`)
-      const contentType = res.headers.get('content-type')
-      console.log(`📡 [useTelegram] Content-Type : ${contentType}`)
-
-      const text = await res.text()
-
-      if (!res.ok) {
-        let serverMessage = text
-        try {
-          const errBody = JSON.parse(text) as { error?: string }
-          if (errBody.error) serverMessage = errBody.error
-        } catch {
-          // garder le texte brut
-        }
-        throw new Error(serverMessage || `Erreur HTTP ${res.status}`)
-      }
-      console.log('📡 [useTelegram] Réponse brute reçue (premiers 200 caractères) :', text.substring(0, 200))
-
-      let data
-      try {
-        data = JSON.parse(text)
-      } catch (parseError) {
-        console.error('❌ [useTelegram] Échec du parsing JSON de la réponse !')
-        console.error('❌ [useTelegram] Contenu non-JSON reçu :', text)
-        throw new Error(`La réponse du serveur n'est pas un JSON valide (reçu: ${text.substring(0, 50)}...)`)
-      }
-
-      console.log('✅ [useTelegram] Réponse JSON parsée avec succès, mode :', data.mode)
+      console.log('✅ [useTelegram] Réponse reçue avec succès, mode :', data.mode)
 
       const nouvelEtat: TelegramState = {
         isLoading: false,
         preview: data.fileUrl || null,
-        error: null,
+        error: data.error || null,
         mode: data.mode || 'standard',
         analysis: data.analysis || null,
       }
@@ -138,15 +110,16 @@ export function useTelegram() {
     setState((prev) => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      const res = await fetch('/api/telegram?ping=1')
-      const data = await res.json() as TelegramPingResult & { mode?: string }
+      const { data, error } = await supabase.functions.invoke('telegram', {
+        body: { ping: true }
+      })
 
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || `Erreur HTTP ${res.status}`)
+      if (error || !data?.ok) {
+        throw new Error(error?.message || data?.error || 'Erreur de connexion au bot')
       }
 
       setState((prev) => ({ ...prev, isLoading: false, error: null, mode: 'ping' }))
-      return data
+      return data as TelegramPingResult & { mode?: string }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erreur inconnue'
       setState((prev) => ({ ...prev, isLoading: false, error: message }))

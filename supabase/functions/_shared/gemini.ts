@@ -1,34 +1,17 @@
-import type { GoogleGenerativeAI } from '@google/generative-ai'
-import { getGeminiVisionModel, SMC_ANALYSIS_PROMPT } from './_utils'
-/** Délai effectif — compressé sur Vercel Hobby (timeout 10–60 s selon plan). */
-function getEffectiveRetryDelayMs(error: unknown): number {
-  const parsed = parseGeminiRetryDelayMs(error)
-  if (process.env.VERCEL) {
-    return Math.min(parsed, 4_000)
+import { GoogleGenAI } from 'npm:@google/genai'
+import { getGeminiVisionModel, SMC_ANALYSIS_PROMPT } from './utils.ts'
+
+const MAX_GEMINI_RETRIES = 3;
+const DEFAULT_RETRY_DELAY_MS = 20_000;
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
-  return parsed
-}
-
-const MAX_GEMINI_RETRIES = process.env.VERCEL ? 2 : 3
-const DEFAULT_RETRY_DELAY_MS = 20_000
-
-/** Compresse bypassée : on envoie l'image brute à Gemini pour éviter les bugs de build avec jimp. */
-export async function optimiserImagePourGemini(input: Buffer, contentType: string = 'image/jpeg'): Promise<{
-  base64: string
-  mimeType: string
-  originalBytes: number
-  optimizedBytes: number
-}> {
-  const originalBytes = input.byteLength
-
-  console.log(`🖼️ [Gemini] Image brute envoyée : ${originalBytes} octets`)
-
-  return {
-    base64: input.toString('base64'),
-    mimeType: contentType,
-    originalBytes,
-    optimizedBytes: originalBytes,
-  }
+  return btoa(binary);
 }
 
 export function isGeminiQuotaError(error: unknown): boolean {
@@ -61,17 +44,22 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function generateContentWithRetry(
-  genAI: GoogleGenerativeAI,
+  ai: GoogleGenAI,
   inlineData: { data: string; mimeType: string }
 ) {
-  const model = genAI.getGenerativeModel({ model: getGeminiVisionModel() })
-  const content = [SMC_ANALYSIS_PROMPT, { inlineData }] as const
+  const contents = [
+    { inlineData },
+    { text: SMC_ANALYSIS_PROMPT }
+  ]
 
   let lastError: unknown
 
   for (let attempt = 1; attempt <= MAX_GEMINI_RETRIES; attempt++) {
     try {
-      return await model.generateContent([...content])
+      return await ai.models.generateContent({
+        model: getGeminiVisionModel(),
+        contents: contents,
+      })
     } catch (error) {
       lastError = error
 
@@ -79,7 +67,8 @@ async function generateContentWithRetry(
         throw error
       }
 
-      const delayMs = getEffectiveRetryDelayMs(error)
+      // Sur Supabase Edge, on a un timeout très large, on peut se permettre de prendre le délai recommandé
+      const delayMs = parseGeminiRetryDelayMs(error)
       console.warn(
         `⚠️ [Gemini] Quota / rate limit (429) — tentative ${attempt}/${MAX_GEMINI_RETRIES}, attente ${Math.round(delayMs / 1000)}s`
       )
@@ -95,7 +84,7 @@ async function generateContentWithRetry(
  * Gère automatiquement les retries en cas de 429 (Free Tier).
  */
 export async function analyserImageUrlAvecGemini(
-  genAI: GoogleGenerativeAI,
+  ai: GoogleGenAI,
   imageUrl: string
 ): Promise<Record<string, unknown>> {
   const imageRes = await fetch(imageUrl)
@@ -105,14 +94,16 @@ export async function analyserImageUrlAvecGemini(
 
   const arrayBuffer = await imageRes.arrayBuffer()
   const contentType = imageRes.headers.get('content-type') || 'image/jpeg'
-  const { base64, mimeType } = await optimiserImagePourGemini(Buffer.from(arrayBuffer), contentType)
+  
+  console.log(`🖼️ [Gemini] Image brute téléchargée : ${arrayBuffer.byteLength} octets`)
+  const base64 = arrayBufferToBase64(arrayBuffer)
 
-  const result = await generateContentWithRetry(genAI, { data: base64, mimeType })
+  const result = await generateContentWithRetry(ai, { data: base64, mimeType: contentType })
 
-  const responseText = result.response.text()
-  const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+  const responseText = result.text
+  const jsonMatch = responseText?.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
-    throw new Error('Gemini n\'a pas retourné de JSON valide')
+    throw new Error('Gemini n\\'a pas retourné de JSON valide')
   }
 
   return JSON.parse(jsonMatch[0]) as Record<string, unknown>

@@ -70,20 +70,18 @@ export default function Settings() {
 
     setTelegramStatus('testing')
     try {
-      const response = await fetch(`/api/telegram?ping=1`, {
-        headers: {
-          'Authorization': `Bearer ${telegramToken}`
-        }
+      // Le token Telegram est géré côté serveur par Supabase Edge Functions.
+      // On teste juste que la fonction est accessible et que le serveur a bien le token.
+      const { data, error } = await supabase.functions.invoke('telegram', {
+        body: { ping: true }
       })
       
-      const data = await response.json()
-      
-      if (data.ok) {
+      if (!error && data?.ok) {
         setTelegramStatus('success')
         addToast('Connexion Telegram réussie !', 'success')
       } else {
         setTelegramStatus('error')
-        addToast(data.error || 'Erreur de connexion Telegram', 'error')
+        addToast(error?.message || data?.error || 'Erreur de connexion Telegram', 'error')
       }
     } catch (error) {
       setTelegramStatus('error')

@@ -1,5 +1,14 @@
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+};
+
 export function jsonResponse(body: unknown, status = 200): Response {
-  return Response.json(body, { status });
+  return Response.json(body, { 
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
 }
 
 export const GEMINI_MODEL_DEFAUT = "gemini-3.1-flash-lite";
@@ -12,9 +21,9 @@ const MODELES_GEMINI_OBSOLETES = new Set([
   "gemini-2.0-flash",
 ]);
 
-/** Lu à l'exécution pour respecter les variables Vercel et ignorer les anciens modèles. */
+/** Lu à l'exécution pour ignorer les anciens modèles. */
 export function getGeminiVisionModel(): string {
-  const configure = process.env.GEMINI_MODEL?.trim();
+  const configure = Deno.env.get('GEMINI_MODEL')?.trim();
   const modele = configure || GEMINI_MODEL_DEFAUT;
   if (MODELES_GEMINI_OBSOLETES.has(modele)) {
     console.warn(
