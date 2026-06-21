@@ -144,13 +144,14 @@ export function useUpdateTrade() {
         throw refetchError || new Error('Erreur lors du rechargement du trade')
       }
 
-      // Déclencher la détection des news économiques après la mise à jour du trade
+      // Déclencher la détection des news économiques en arrière-plan après la mise à jour du trade (non bloquant)
       if (fullTrade.date_backtested && fullTrade.entry_time && fullTrade.exit_time) {
-        try {
-          const session = await supabase.auth.getSession()
-          const token = session.data.session?.access_token
+        console.log('📡 [useUpdateTrade] Déclenchement asynchrone de la détection des news...')
+        
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          const token = session?.access_token
           
-          await supabase.functions.invoke('detect-news', {
+          supabase.functions.invoke('detect-news', {
             body: {
               trade_id: fullTrade.id,
               pair: fullTrade.pair,
@@ -160,9 +161,14 @@ export function useUpdateTrade() {
             },
             headers: token ? { Authorization: `Bearer ${token}` } : undefined
           })
-        } catch (newsErr) {
-          console.error('❌ [useUpdateTrade] Erreur de détection des news :', newsErr)
-        }
+          .then(() => {
+            console.log('✅ [useUpdateTrade] Détection des news terminée en tâche de fond')
+            queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+          })
+          .catch((newsErr) => {
+            console.error('❌ [useUpdateTrade] Échec de l\'appel asynchrone à detect-news :', newsErr)
+          })
+        })
       }
 
       return fullTrade as TradeWithSteps

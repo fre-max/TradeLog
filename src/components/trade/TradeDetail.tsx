@@ -125,7 +125,7 @@ export function TradeDetail() {
           </Section>
 
           {/* Annonces Économiques */}
-          {news && (
+          {news ? (
             <Section title="📢 Annonces Économiques">
               <div className="flex flex-col gap-3">
                 {news.fields && (news.fields as any).news && (news.fields as any).news.length > 0 ? (
@@ -193,6 +193,15 @@ export function TradeDetail() {
                 )}
               </div>
             </Section>
+          ) : (
+            selectedTrade.date_backtested && selectedTrade.entry_time && selectedTrade.exit_time && (
+              <Section title="📢 Annonces Économiques">
+                <div className="flex items-center gap-2.5 text-txt2 text-[13px] italic p-1">
+                  <div className="w-4 h-4 border-2 border-accent/20 border-t-accent rounded-full animate-spin flex-shrink-0"></div>
+                  <span>Recherche des annonces économiques correspondantes en arrière-plan...</span>
+                </div>
+              </Section>
+            )
           )}
 
           {/* Biais */}

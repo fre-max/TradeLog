@@ -162,14 +162,14 @@ export function useQuickEntry() {
         console.log('✅ [useQuickEntry] Image Telegram attachée à l\'étape')
       }
 
-      // 5️⃣ Déclencher automatiquement la détection des news économiques
+      // 5️⃣ Déclencher automatiquement la détection des news économiques en arrière-plan (non bloquant)
       if (insertedTrade.date_backtested && insertedTrade.entry_time && insertedTrade.exit_time) {
-        try {
-          console.log('📡 [useQuickEntry] Déclenchement de la détection des news...')
-          const session = await supabase.auth.getSession()
-          const token = session.data.session?.access_token
+        console.log('📡 [useQuickEntry] Déclenchement asynchrone de la détection des news...')
+        
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          const token = session?.access_token
           
-          await supabase.functions.invoke('detect-news', {
+          supabase.functions.invoke('detect-news', {
             body: {
               trade_id: insertedTrade.id,
               pair: insertedTrade.pair,
@@ -179,10 +179,14 @@ export function useQuickEntry() {
             },
             headers: token ? { Authorization: `Bearer ${token}` } : undefined
           })
-          console.log('✅ [useQuickEntry] Détection des news lancée avec succès')
-        } catch (newsErr) {
-          console.error('❌ [useQuickEntry] Échec de l\'appel à detect-news :', newsErr)
-        }
+          .then(() => {
+            console.log('✅ [useQuickEntry] Détection des news terminée en tâche de fond')
+            queryClient.invalidateQueries({ queryKey: ['trades'] })
+          })
+          .catch((newsErr) => {
+            console.error('❌ [useQuickEntry] Échec de l\'appel asynchrone à detect-news :', newsErr)
+          })
+        })
       }
 
       // 6️⃣ Recharger le trade complet avec étapes et images pour le renvoyer
