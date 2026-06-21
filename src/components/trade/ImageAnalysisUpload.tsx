@@ -36,7 +36,9 @@ export function ImageAnalysisUpload({ onAnalysisComplete, onManualMode }: ImageA
   const lancerAnalyseIA = async (imageUrl: string, tradeId: string) => {
     try {
       setStatusMessage("🧠 Analyse du graphique par l'IA en cours...")
-      const { data, error: analyzeError } = await supabase.functions.invoke(`analyze?url=${encodeURIComponent(imageUrl)}`)
+      const { data, error: analyzeError } = await supabase.functions.invoke(`analyze?url=${encodeURIComponent(imageUrl)}`, {
+        method: 'GET'
+      })
 
       if (analyzeError) throw analyzeError
 
