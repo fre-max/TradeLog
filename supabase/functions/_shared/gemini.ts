@@ -103,7 +103,7 @@ export async function analyserImageUrlAvecGemini(
   const responseText = result.text
   const jsonMatch = responseText?.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
-    throw new Error('Gemini n\\'a pas retourné de JSON valide')
+    throw new Error("Gemini n'a pas retourné de JSON valide")
   }
 
   return JSON.parse(jsonMatch[0]) as Record<string, unknown>

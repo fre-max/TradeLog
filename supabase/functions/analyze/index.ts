@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
 
   const imageUrl = new URL(req.url).searchParams.get('url')
   if (!imageUrl) {
-    return jsonResponse({ error: 'URL de l\\'image manquante (paramètre url requis)' }, 400)
+    return jsonResponse({ error: "URL de l'image manquante (paramètre url requis)" }, 400)
   }
 
   if (!ai) {
@@ -31,8 +31,8 @@ Deno.serve(async (req) => {
       console.error('❌ [Analyze API] Quota Gemini Free Tier :', error)
       return jsonResponse({ error: messageErreurQuotaGemini(error) }, 429)
     }
-    const message = error instanceof Error ? error.message : 'Erreur interne lors de l\\'analyse de l\\'image'
-    console.error('❌ [Analyze API] Erreur d\\'analyse :', error)
+    const message = error instanceof Error ? error.message : "Erreur interne lors de l'analyse de l'image"
+    console.error("❌ [Analyze API] Erreur d'analyse :", error)
     return jsonResponse({ error: message }, 500)
   }
 })

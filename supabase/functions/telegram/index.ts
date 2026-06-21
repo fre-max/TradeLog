@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
         }
       })
     } catch (e) {
-      return jsonResponse({ error: 'Impossible de proxyfier l\\'image' }, 500)
+      return jsonResponse({ error: "Impossible de proxyfier l'image" }, 500)
     }
   }
 
@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
       console.log('❌ [Telegram API] Aucune image récente trouvée dans le bot')
       await acquitterUpdates(token, maxUpdateId)
       return jsonResponse({
-        error: 'Aucune image en attente. Envoie d\\'abord une capture au bot Telegram, puis clique à nouveau sur le bouton.',
+        error: "Aucune image en attente. Envoie d'abord une capture au bot Telegram, puis clique à nouveau sur le bouton.",
         hint: 'Envoie une photo avec la légende "quick" pour un Quick Entry automatique.',
       }, 422)
     }
@@ -237,7 +237,7 @@ Deno.serve(async (req) => {
 
       const authHeader = req.headers.get('authorization')
       if (!authHeader || !supabaseUrl || !supabaseAnonKey) {
-        console.log('⚠️ [Telegram API] Pas d\\'en-tête d\\'autorisation, renvoi des données pour création client')
+        console.log("⚠️ [Telegram API] Pas d'en-tête d'autorisation, renvoi des données pour création client")
         await acquitterUpdates(token, maxUpdateId)
         return jsonResponse({
           mode: 'quick_fallback',
@@ -301,7 +301,7 @@ Deno.serve(async (req) => {
         .single()
 
       if (stepInsertError || !insertedStep) {
-        throw stepInsertError || new Error('Erreur lors de la création de l\\'étape générale')
+        throw stepInsertError || new Error("Erreur lors de la création de l'étape générale")
       }
 
       const { error: imageInsertError } = await supabase
@@ -313,7 +313,7 @@ Deno.serve(async (req) => {
         })
 
       if (imageInsertError) {
-        console.error('❌ [Telegram API] Erreur lors de l\\'enregistrement de l\\'image :', imageInsertError)
+        console.error("❌ [Telegram API] Erreur lors de l'enregistrement de l'image :", imageInsertError)
       }
 
       console.log('✅ [Telegram API] Trade rapide et étape créés en BDD. ID Trade :', insertedTrade.id)
@@ -341,14 +341,14 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log('🚀 [Telegram API] Mode Standard détecté (stockage d\\'image simple)')
+    console.log("🚀 [Telegram API] Mode Standard détecté (stockage d'image simple)")
     
     const stepId = stepIdFromParam
     if (stepId) {
-      console.log('📎 [Telegram API] step_id fourni, attachement de l\\'image au step :', stepId)
+      console.log("📎 [Telegram API] step_id fourni, attachement de l'image au step :", stepId)
       
       if (!supabaseUrl || !supabaseAnonKey) {
-        console.warn('⚠️ [Telegram API] Supabase non configuré, impossible d\\'attacher l\\'image au step')
+        console.warn("⚠️ [Telegram API] Supabase non configuré, impossible d'attacher l'image au step")
       } else {
         const authHeader = req.headers.get('authorization')
         const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -364,7 +364,7 @@ Deno.serve(async (req) => {
           })
 
         if (imageInsertError) {
-          console.error('❌ [Telegram API] Erreur lors de l\\'enregistrement de l\\'image :', imageInsertError)
+          console.error("❌ [Telegram API] Erreur lors de l'enregistrement de l'image :", imageInsertError)
         } else {
           console.log('✅ [Telegram API] Image attachée au step avec succès')
         }
