@@ -21,6 +21,7 @@ interface TelegramState {
   error: string | null
   mode: TelegramMode       // Mode détecté selon la caption du message
   analysis: GeminiAnalysis | null  // Données extraites par Gemini (si analyse ou quick)
+  tradeId?: string | null  // ID du trade créé en BDD (si mode === 'quick')
 }
 
 /**
@@ -70,6 +71,7 @@ export function useTelegram() {
         error: data.error || null,
         mode: data.mode || 'standard',
         analysis: data.analysis || null,
+        tradeId: data.tradeId || null,
       }
 
       setState(nouvelEtat)
@@ -84,6 +86,7 @@ export function useTelegram() {
         error: message,
         mode: null,
         analysis: null,
+        tradeId: null,
       }
       setState(etatErreur)
       return etatErreur
@@ -102,7 +105,7 @@ export function useTelegram() {
 
   // Réinitialiser l'état complet du hook
   const clearPreview = () => {
-    setState({ isLoading: false, preview: null, error: null, mode: null, analysis: null })
+    setState({ isLoading: false, preview: null, error: null, mode: null, analysis: null, tradeId: null })
   }
 
   // Teste la connexion au bot sans consommer de message ni appeler Gemini

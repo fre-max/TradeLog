@@ -300,16 +300,29 @@ Deno.serve(async (req) => {
         throw tradeInsertError || new Error('Erreur lors de la création du trade')
       }
 
+      const analysis = analysisData as any
       const stepData = {
         trade_id: insertedTrade.id,
         order: 0,
         type: 'biais',
-        title: 'Infos générales (Quick Entry)',
-        timeframe: (analysisData.timeframe as string) || null,
-        notes: `Patterns SMC identifiés : ${((analysisData.patterns as string[]) || []).join(', ') || 'aucun'}`,
+        title: 'Quick Entry — IA',
+        timeframe: analysis.timeframe || null,
+        notes: [
+          analysis.patterns?.length
+            ? `Patterns SMC identifiés : ${analysis.patterns.join(', ')}`
+            : null,
+          analysis.entry_price ? `Entrée : ${analysis.entry_price}` : null,
+          analysis.sl ? `SL : ${analysis.sl}` : null,
+          analysis.tp ? `TP : ${analysis.tp}` : null,
+        ].filter(Boolean).join('\n') || null,
         fields: {
-          extracted: analysisData,
           is_quick_entry: true,
+          entry_price: analysis.entry_price,
+          sl: analysis.sl,
+          tp: analysis.tp,
+          rr: analysis.rr,
+          patterns: analysis.patterns,
+          confidence: analysis.confidence,
         },
       }
 

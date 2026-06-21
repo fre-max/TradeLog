@@ -3,6 +3,7 @@ import { useTelegram } from '@/hooks/useTelegram'
 import { useQuickEntry } from '@/hooks/useQuickEntry'
 import { useUIStore } from '@/store'
 import { cn } from '@/lib/utils'
+import { useQueryClient } from '@tanstack/react-query'
 
 /**
  * Bouton flottant en bas à droite pour déclencher le Quick Entry via Telegram.
@@ -19,6 +20,7 @@ export function TelegramButton() {
   const { mutateAsync: creerQuickEntry, isPending: quickEntryPending } = useQuickEntry()
   const addToast = useUIStore((state) => state.addToast)
   const openNewTrade = useUIStore((state) => state.openNewTrade)
+  const queryClient = useQueryClient()
 
   // État local pour afficher le résumé d'action
   const [showResultat, setShowResultat] = useState(false)
@@ -37,9 +39,24 @@ export function TelegramButton() {
       return
     }
 
-    if ((etat.mode === 'quick' || etat.mode === 'quick_fallback') && etat.analysis) {
+    if (etat.mode === 'quick' && etat.analysis) {
       try {
-        // Créer le trade automatiquement via le hook useQuickEntry
+        // Le trade a déjà été créé par la fonction Edge Supabase en arrière-plan.
+        // On a simplement besoin de rafraîchir les données de l'interface et de notifier l'utilisateur.
+        queryClient.invalidateQueries({ queryKey: ['trades'] })
+        setResultatMessage(
+          `✅ Trade rapide créé par le bot ! (${etat.analysis.pair || 'Paire inconnue'} ${etat.analysis.direction || ''}) — Complète l'analyse dès que possible.`
+        )
+        setShowResultat(true)
+        addToast('Trade rapide récupéré et synchronisé !', 'success')
+        console.log('✅ [TelegramButton] Trade rapide synchronisé, ID :', etat.tradeId)
+      } catch (err: any) {
+        console.error('❌ [TelegramButton] Erreur de synchronisation du trade :', err)
+        addToast('Erreur lors de la synchronisation du trade', 'error')
+      }
+    } else if (etat.mode === 'quick_fallback' && etat.analysis) {
+      try {
+        // En cas de fallback, on crée le trade côté client via le hook
         const resultat = await creerQuickEntry({
           analysis: etat.analysis,
           imageUrl: etat.preview,
@@ -49,7 +66,7 @@ export function TelegramButton() {
         )
         setShowResultat(true)
         addToast('Trade rapide créé avec succès !', 'success')
-        console.log('✅ [TelegramButton] Trade rapide créé, ID :', resultat.tradeId)
+        console.log('✅ [TelegramButton] Trade rapide créé via client, ID :', resultat.tradeId)
       } catch (err: any) {
         console.error('❌ [TelegramButton] Erreur création trade rapide :', err)
         addToast(err.message || 'Erreur lors de la création du trade', 'error')
