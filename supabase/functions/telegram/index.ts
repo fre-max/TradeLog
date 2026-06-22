@@ -13,16 +13,34 @@ interface TelegramFile {
   file_id: string
 }
 
+interface TelegramDocument {
+  file_id: string
+  mime_type?: string
+  file_name?: string
+}
+
 interface TelegramMessage {
   message_id: number
   date: number
   photo?: TelegramFile[]
+  document?: TelegramDocument
+  caption?: string
+}
+
+// Représente une structure simplifiée et unifiée contenant uniquement ce dont on a besoin pour l'image
+interface MessageImageValide {
+  message_id: number
+  date: number
+  file_id: string
   caption?: string
 }
 
 interface TelegramUpdate {
   update_id: number
   message?: TelegramMessage
+  edited_message?: TelegramMessage
+  channel_post?: TelegramMessage
+  edited_channel_post?: TelegramMessage
 }
 
 interface TelegramResponse {
@@ -40,14 +58,25 @@ interface WebhookInfoResponse {
   result: { url?: string }
 }
 
+// Vérifie si un webhook est déjà actif sur le bot
 async function verifierWebhook(token: string): Promise<string | null> {
   const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`)
   const data: WebhookInfoResponse = await res.json()
   return data.result?.url || null
 }
 
+/**
+ * Récupère le dernier message contenant une image (photo classique ou document de type image)
+ * sur le bot Telegram en inspectant tous les types d'updates disponibles.
+ * 
+ * Exemple d'utilisation :
+ * const { message, maxUpdateId } = await getDernierMessagePhoto(token);
+ * if (message) {
+ *   console.log('Image récupérée avec le file_id :', message.file_id);
+ * }
+ */
 async function getDernierMessagePhoto(token: string): Promise<{
-  message: TelegramMessage | null
+  message: MessageImageValide | null
   maxUpdateId: number
 }> {
   const webhookUrl = await verifierWebhook(token)
@@ -57,8 +86,10 @@ async function getDernierMessagePhoto(token: string): Promise<{
     )
   }
 
+  // On demande les messages, les messages édités, les posts de canaux et les posts de canaux édités
+  const allowedUpdates = JSON.stringify(["message", "edited_message", "channel_post", "edited_channel_post"])
   const updatesRes = await fetch(
-    `https://api.telegram.org/bot${token}/getUpdates?limit=100&allowed_updates=${encodeURIComponent('["message"]')}`
+    `https://api.telegram.org/bot${token}/getUpdates?limit=100&allowed_updates=${encodeURIComponent(allowedUpdates)}`
   )
   const updates: TelegramResponse = await updatesRes.json()
 
@@ -66,19 +97,47 @@ async function getDernierMessagePhoto(token: string): Promise<{
     return { message: null, maxUpdateId: 0 }
   }
 
-  let dernierMessage: TelegramMessage | null = null
+  let dernierMessageImage: MessageImageValide | null = null
   let maxUpdateId = 0
 
   for (const update of updates.result) {
     maxUpdateId = Math.max(maxUpdateId, update.update_id)
-    const msg = update.message
-    if (!msg?.photo?.length) continue
-    if (!dernierMessage || msg.message_id > dernierMessage.message_id) {
-      dernierMessage = msg
+    
+    // On extrait le message de n'importe quel canal d'update Telegram possible
+    const msg = update.message || update.channel_post || update.edited_message || update.edited_channel_post
+    if (!msg) continue
+
+    let fileId: string | null = null
+
+    // Cas 1 : C'est une photo Telegram standard compressée
+    if (msg.photo && msg.photo.length > 0) {
+      // On prend la version de la photo ayant la plus haute résolution (la dernière du tableau)
+      fileId = msg.photo[msg.photo.length - 1].file_id
+    }
+    // Cas 2 : C'est un document (ex: image envoyée sans compression comme fichier)
+    else if (msg.document) {
+      const mimeType = msg.document.mime_type || ''
+      const fileName = msg.document.file_name || ''
+      const estUneImage = mimeType.startsWith('image/') || /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(fileName)
+      
+      if (estUneImage) {
+        fileId = msg.document.file_id
+      }
+    }
+
+    if (!fileId) continue
+
+    // getUpdates retournant les éléments dans l'ordre chronologique (par update_id croissant),
+    // le dernier message contenant une image qu'on rencontre dans cette boucle est forcément le plus récent.
+    dernierMessageImage = {
+      message_id: msg.message_id,
+      date: msg.date,
+      file_id: fileId,
+      caption: msg.caption,
     }
   }
 
-  return { message: dernierMessage, maxUpdateId }
+  return { message: dernierMessageImage, maxUpdateId }
 }
 
 async function acquitterUpdates(token: string, maxUpdateId: number): Promise<void> {
@@ -227,7 +286,7 @@ Deno.serve(async (req) => {
     console.log('📡 [Telegram API] Récupération du dernier message Telegram...')
 
     const { message, maxUpdateId } = await getDernierMessagePhoto(token)
-    if (!message?.photo?.length) {
+    if (!message) {
       console.log('❌ [Telegram API] Aucune image récente trouvée dans le bot')
       await acquitterUpdates(token, maxUpdateId)
       return jsonResponse({
@@ -236,9 +295,8 @@ Deno.serve(async (req) => {
       }, 422)
     }
 
-    const photo = message.photo[message.photo.length - 1]
     const fileRes = await fetch(
-      `https://api.telegram.org/bot${token}/getFile?file_id=${photo.file_id}`
+      `https://api.telegram.org/bot${token}/getFile?file_id=${message.file_id}`
     )
     const fileData: TelegramFileResponse = await fileRes.json()
 
