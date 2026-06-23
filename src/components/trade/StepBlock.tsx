@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ComboField } from '@/components/fields/ComboField'
 import type { FormDataState } from '@/lib/tradeForm'
+import { useBrouillonStore } from '@/store/brouillonStore'
+import type { Brouillon } from '@/store/brouillonStore'
 
 type StepType = 'general' | 'biais' | 'poi' | 'entry' | 'result' | 'custom'
 
@@ -39,23 +41,94 @@ export function StepBlock({
 }: StepBlockProps) {
   const [open, setOpen] = useState(defaultOpen)
 
+  // ─── Récupère les brouillons depuis le store pour le bouton d'import ────────
+  const brouillons = useBrouillonStore((state) => state.brouillons)
+  const [showImportMenu, setShowImportMenu] = useState(false)
+
+  // Détermine quels brouillons ont des données pour la section courante
+  // Exemple : pour type='biais', on cherche les brouillons avec sections.biais rempli
+  const brouillonsDisponibles = brouillons.filter((b: Brouillon) => {
+    if (type === 'biais') return Boolean(b.sections.biais)
+    if (type === 'poi') return Boolean(b.sections.poi)
+    if (type === 'entry') return Boolean(b.sections.entry)
+    return false
+  })
+
+  // Injecte les données du brouillon sélectionné dans le formulaire principal
+  const importerDepuisBrouillon = (brouillon: Brouillon) => {
+    if (type === 'biais' && brouillon.sections.biais) {
+      const { biais_timeframe, biais_direction, biais_reasons } = brouillon.sections.biais
+      setFormData((prev) => ({ ...prev, biais_timeframe, biais_direction, biais_reasons }))
+    }
+    if (type === 'poi' && brouillon.sections.poi) {
+      const { poi_timeframe, poi_type, poi_confluences } = brouillon.sections.poi
+      setFormData((prev) => ({ ...prev, poi_timeframe, poi_type, poi_confluences }))
+    }
+    if (type === 'entry' && brouillon.sections.entry) {
+      const { entry_timeframe, entry_setup, entry_price, entry_sl, entry_tp, entry_trailing, entry_reasons } = brouillon.sections.entry
+      setFormData((prev) => ({ ...prev, entry_timeframe, entry_setup, entry_price, entry_sl, entry_tp, entry_trailing, entry_reasons }))
+    }
+    setShowImportMenu(false)
+  }
+
+  // Les sections qui supportent l'import de brouillon
+  const sectionAvecImport = type === 'biais' || type === 'poi' || type === 'entry'
+
   return (
     <div className="border-b border-border">
       {/* En-tête cliquable pour ouvrir/fermer l'étape */}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-white/[0.02] transition-colors text-left"
-      >
-        <div className={cn(
-          'w-[22px] h-[22px] rounded-full border-[1.5px] flex items-center justify-center text-[11px] font-semibold flex-shrink-0 transition-all',
-          open ? 'border-accent bg-accent text-white' : 'border-border2 text-txt3'
-        )}>
-          {number}
-        </div>
-        <span className="text-txt text-[13.5px] font-medium flex-1">{title}</span>
-        <span className={cn('text-txt3 text-[11px] transition-transform', open && 'rotate-90')}>▶</span>
-      </button>
+      <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-3 flex-1 text-left"
+        >
+          <div className={cn(
+            'w-[22px] h-[22px] rounded-full border-[1.5px] flex items-center justify-center text-[11px] font-semibold flex-shrink-0 transition-all',
+            open ? 'border-accent bg-accent text-white' : 'border-border2 text-txt3'
+          )}>
+            {number}
+          </div>
+          <span className="text-txt text-[13.5px] font-medium flex-1">{title}</span>
+          <span className={cn('text-txt3 text-[11px] transition-transform', open && 'rotate-90')}>▶</span>
+        </button>
+
+        {/* Bouton d'import depuis brouillon — visible uniquement si des données existent */}
+        {sectionAvecImport && brouillonsDisponibles.length > 0 && (
+          <div className="relative flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowImportMenu((v) => !v)}
+              title="Importer depuis un brouillon"
+              className="text-[11px] px-2 py-1 bg-[#7c3aed]/10 text-[#7c3aed] border border-[#7c3aed]/25 rounded-md hover:bg-[#7c3aed]/20 transition-colors font-medium"
+            >
+              💾 Importer
+            </button>
+
+            {/* Dropdown des brouillons disponibles */}
+            {showImportMenu && (
+              <>
+                {/* Overlay transparent pour fermer en cliquant ailleurs */}
+                <div className="fixed inset-0 z-[5]" onClick={() => setShowImportMenu(false)} />
+                <div className="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg shadow-xl z-[10] min-w-[160px] overflow-hidden">
+                  <p className="text-txt3 text-[10px] px-3 py-1.5 border-b border-border uppercase tracking-wider">Choisir un brouillon</p>
+                  {brouillonsDisponibles.map((brouillon: Brouillon) => (
+                    <button
+                      key={brouillon.id}
+                      type="button"
+                      onClick={() => importerDepuisBrouillon(brouillon)}
+                      className="w-full text-left px-3 py-2 text-[12.5px] text-txt hover:bg-accent/8 transition-colors flex items-center gap-2"
+                    >
+                      <span className="w-5 h-5 rounded-full bg-[#7c3aed]/15 text-[#7c3aed] flex items-center justify-center text-[10px] font-bold">{brouillon.id}</span>
+                      Brouillon {brouillon.id}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Contenu de l'étape affiché si ouvert */}
       {open && (

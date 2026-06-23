@@ -8,6 +8,7 @@ import Stats from '@/pages/Stats'
 import Settings from '@/pages/Settings'
 import Auth from '@/pages/Auth'
 import { ToastContainer } from '@/components/ui/Toast'
+import { BrouillonButton } from '@/components/trade/BrouillonButton'
 
 // Configuration de TanStack Query
 const queryClient = new QueryClient({
@@ -76,6 +77,9 @@ export default function App() {
 
         {/* Toasts globaux — visibles sur toutes les pages */}
         <ToastContainer />
+
+        {/* Bouton brouillons — visible seulement si l'utilisateur est connecté */}
+        {session && <BrouillonButton />}
       </BrowserRouter>
     </QueryClientProvider>
   )
