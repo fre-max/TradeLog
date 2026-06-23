@@ -32,7 +32,8 @@ export function TelegramButton() {
     console.log('📱 [TelegramButton] Vérification du dernier message Telegram...')
     setShowResultat(false)
 
-    const etat = await fetchLastMessage()
+    // On demande explicitement le mode 'quick' : analyse Gemini + création du trade automatique
+    const etat = await fetchLastMessage(undefined, 'quick')
 
     if (etat.error || !etat.preview) {
       addToast(etat.error || 'Aucune image trouvée dans le bot', 'error')

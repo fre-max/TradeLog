@@ -11,6 +11,31 @@ export default function Settings() {
   const { data: trades = [] } = useTrades()
   const addToast = useUIStore((state) => state.addToast)
   
+  // ─── Calcul des quotas et de la consommation ────────────────
+  // On calcule l'usage de manière dynamique à partir des données en cache de React Query
+  let totalSteps = 0
+  let totalImagesStockees = 0
+  let totalAnalysesGemini = 0
+
+  trades.forEach(trade => {
+    totalSteps += trade.steps?.length || 0
+    trade.steps?.forEach(step => {
+      step.images?.forEach(img => {
+        // Les images issues d'upload direct ou de Telegram sont stockées dans le bucket Supabase
+        if (img.source === 'upload' || img.source === 'telegram') {
+          totalImagesStockees++
+        }
+        // Chaque image Telegram correspond à un appel à l'API Gemini Vision
+        if (img.source === 'telegram') {
+          totalAnalysesGemini++
+        }
+      })
+    })
+  })
+
+  // Estimation de la taille de stockage (250 Ko en moyenne par capture d'écran)
+  const stockageEstimeMo = parseFloat((totalImagesStockees * 0.25).toFixed(2))
+  
   // États pour les différentes sections
   const [telegramToken, setTelegramToken] = useState('')
   const [telegramStatus, setTelegramStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
@@ -171,6 +196,85 @@ export default function Settings() {
             <p className="text-txt3 text-[12px]">
               💡 Pour obtenir un token, créez un bot via @BotFather sur Telegram
             </p>
+          </div>
+        </Section>
+
+        {/* Section Consommation & Quotas */}
+        <Section title="⚡ Consommation & Quotas (Free Tier)">
+          <div className="space-y-6">
+            
+            {/* Jauge Gemini IA */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-[13px]">
+                <span className="text-txt font-medium flex items-center gap-1.5">
+                  🔮 Analyses IA (Gemini Vision)
+                </span>
+                <span className="text-txt3 font-semibold">
+                  {totalAnalysesGemini} / 1 500 <span className="text-[11px] font-normal text-txt4">requêtes/jour</span>
+                </span>
+              </div>
+              <div className="w-full h-2 bg-surface2 rounded-full overflow-hidden">
+                <div 
+                  className="h-full rounded-full transition-all duration-500" 
+                  style={{ 
+                    width: `${Math.min((totalAnalysesGemini / 1500) * 100, 100)}%`,
+                    backgroundColor: '#6366f1' 
+                  }}
+                />
+              </div>
+              <p className="text-txt3 text-[11.5px] leading-tight">
+                Usage de l'API gratuite de Gemini. Limite de 15 requêtes/minute et 1 500 requêtes/jour.
+              </p>
+            </div>
+
+            {/* Jauge Stockage Supabase */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-[13px]">
+                <span className="text-txt font-medium flex items-center gap-1.5">
+                  📁 Stockage d'images (Supabase Storage)
+                </span>
+                <span className="text-txt3 font-semibold">
+                  {stockageEstimeMo} Mo / 1 000 Mo <span className="text-[11px] font-normal text-txt4">({totalImagesStockees} fichier{totalImagesStockees > 1 ? 's' : ''})</span>
+                </span>
+              </div>
+              <div className="w-full h-2 bg-surface2 rounded-full overflow-hidden">
+                <div 
+                  className="h-full rounded-full transition-all duration-500" 
+                  style={{ 
+                    width: `${Math.min((stockageEstimeMo / 1000) * 100, 100)}%`,
+                    backgroundColor: '#3b82f6' 
+                  }}
+                />
+              </div>
+              <p className="text-txt3 text-[11.5px] leading-tight">
+                Espace disque estimé pour vos captures d'écran (taille moyenne : 250 Ko/image). Quota Supabase Free Tier : 1 Go.
+              </p>
+            </div>
+
+            {/* Jauge Base de données */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-[13px]">
+                <span className="text-txt font-medium flex items-center gap-1.5">
+                  💾 Base de données (Supabase Postgres)
+                </span>
+                <span className="text-txt3 font-semibold">
+                  {trades.length} / 10 000 <span className="text-[11px] font-normal text-txt4">trades ({totalSteps} étape{totalSteps > 1 ? 's' : ''})</span>
+                </span>
+              </div>
+              <div className="w-full h-2 bg-surface2 rounded-full overflow-hidden">
+                <div 
+                  className="h-full rounded-full transition-all duration-500" 
+                  style={{ 
+                    width: `${Math.min((trades.length / 10000) * 100, 100)}%`,
+                    backgroundColor: '#10b981' 
+                  }}
+                />
+              </div>
+              <p className="text-txt3 text-[11.5px] leading-tight">
+                Nombre de trades enregistrés. La base de données Supabase gratuite est limitée à 500 Mo (environ 250 000 trades).
+              </p>
+            </div>
+
           </div>
         </Section>
 

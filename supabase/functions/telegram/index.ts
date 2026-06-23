@@ -230,6 +230,10 @@ Deno.serve(async (req) => {
   let isPing = url.searchParams.get('ping') === '1' || url.searchParams.get('test') === '1'
   let stepIdFromParam = url.searchParams.get('step_id')
   let proxyImageUrl = url.searchParams.get('proxy_image_url')
+  // Le mode est désormais transmis par le frontend selon le bouton pressé :
+  // - 'quick' → bouton flottant "Bot Telegram" ou "+ Nouveau" : analyse Gemini + création du trade
+  // - 'standard' → bouton dans le formulaire d'étape : import d'image simple, sans analyse
+  let modeFromClient: 'quick' | 'standard' = 'quick'
 
   if (req.method === 'POST') {
     try {
@@ -237,8 +241,10 @@ Deno.serve(async (req) => {
       if (body.ping || body.test) isPing = true
       if (body.step_id) stepIdFromParam = body.step_id
       if (body.proxy_image_url) proxyImageUrl = body.proxy_image_url
+      // On récupère le mode envoyé par le frontend, avec 'quick' comme valeur par défaut
+      if (body.mode === 'standard') modeFromClient = 'standard'
     } catch (e) {
-      // Body empty or not JSON, ignore
+      // Body vide ou pas du JSON, on ignore
     }
   }
 
@@ -290,8 +296,7 @@ Deno.serve(async (req) => {
       console.log('❌ [Telegram API] Aucune image récente trouvée dans le bot')
       await acquitterUpdates(token, maxUpdateId)
       return jsonResponse({
-        error: "Aucune image en attente. Envoie d'abord une capture au bot Telegram, puis clique à nouveau sur le bouton.",
-        hint: 'Envoie une photo avec la légende "quick" pour un Quick Entry automatique.',
+        error: "Aucune image en attente. Envoie d'abord une capture dans le canal Telegram, puis clique à nouveau sur le bouton.",
       }, 422)
     }
 
@@ -305,11 +310,12 @@ Deno.serve(async (req) => {
     }
 
     const fileUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`
-    const caption = (message.caption || '').toLowerCase().trim()
-    console.log('✅ [Telegram API] Image trouvée. Caption :', caption || '(aucune)')
+    console.log(`✅ [Telegram API] Image trouvée. Mode demandé par le client : ${modeFromClient}`)
 
-    if (caption === 'q' || caption === 'quick') {
-      console.log('🚀 [Telegram API] Mode Quick Entry détecté')
+    // Mode 'quick' : demandé par le bouton flottant ou "+ Nouveau"
+    // L'image est analysée par Gemini et le trade est créé directement en base de données
+    if (modeFromClient === 'quick') {
+      console.log('🚀 [Telegram API] Mode Quick Entry : analyse Gemini + création du trade')
       const analysisData = await analyserImageAvecGemini(fileUrl)
 
       const authHeader = req.headers.get('authorization')
@@ -415,7 +421,7 @@ Deno.serve(async (req) => {
 
       console.log('✅ [Telegram API] Trade rapide et étape créés en BDD. ID Trade :', insertedTrade.id)
 
-      // 5️⃣ Déclenchement automatique et asynchrone de la détection des news
+      // Déclenchement automatique et asynchrone de la détection des news
       if (insertedTrade.date_backtested && insertedTrade.entry_time && insertedTrade.exit_time) {
         const functionUrl = `${supabaseUrl}/functions/v1/detect-news`
         console.log(`📡 [Telegram API] Déclenchement automatique de la détection des news sur ${functionUrl}...`)
@@ -442,7 +448,7 @@ Deno.serve(async (req) => {
           }
         })
         .catch(err => {
-          console.error('❌ [Telegram API] Erreur réseau lors de l\'appel à detect-news :', err)
+          console.error('\u274c [Telegram API] Erreur réseau lors de l\'appel à detect-news :', err)
         })
       }
 
@@ -452,19 +458,6 @@ Deno.serve(async (req) => {
         tradeId: insertedTrade.id,
         analysis: analysisData,
         fileUrl,
-        date: message.date,
-      })
-    }
-
-    if (caption === 'a' || caption === 'analyse') {
-      console.log('🚀 [Telegram API] Mode Analyse seule détecté')
-      const analysisData = await analyserImageAvecGemini(fileUrl)
-
-      await acquitterUpdates(token, maxUpdateId)
-      return jsonResponse({
-        mode: 'analyse',
-        fileUrl,
-        analysis: analysisData,
         date: message.date,
       })
     }

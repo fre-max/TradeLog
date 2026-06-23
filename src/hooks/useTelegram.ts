@@ -49,15 +49,19 @@ export function useTelegram() {
   })
 
   // Appelle la fonction Edge Supabase telegram et met à jour l'état selon le mode retourné
-  const fetchLastMessage = async (stepId?: string): Promise<TelegramState> => {
+  // Le paramètre `mode` permet de choisir le comportement côté serveur :
+  // - 'quick' (défaut) : analyse Gemini + création du trade automatique (bouton flottant)
+  // - 'standard' : import simple de l'image sans analyse (bouton dans le formulaire d'étape)
+  const fetchLastMessage = async (stepId?: string, mode: 'quick' | 'standard' = 'quick'): Promise<TelegramState> => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      console.log('📡 [useTelegram] Appel de la fonction Edge Supabase telegram...')
+      console.log(`📡 [useTelegram] Appel de la fonction Edge Supabase telegram... (mode: ${mode})`)
 
-      const { data, error } = await supabase.functions.invoke('telegram', {
-        body: stepId ? { step_id: stepId } : {}
-      })
+      const body: Record<string, unknown> = { mode }
+      if (stepId) body.step_id = stepId
+
+      const { data, error } = await supabase.functions.invoke('telegram', { body })
 
       if (error) {
         throw new Error(error.message || 'Erreur lors de appel à la fonction telegram')
@@ -94,9 +98,9 @@ export function useTelegram() {
   }
 
   // Méthode de rétrocompatibilité : fetchLastImage (utilisé par ImageField.tsx)
-  // Préserve l'ancien comportement en retournant { fileUrl, date }
+  // Passe toujours le mode 'standard' car on veut seulement importer l'image sans analyse Gemini
   const fetchLastImage = async (stepId?: string) => {
-    const etat = await fetchLastMessage(stepId)
+    const etat = await fetchLastMessage(stepId, 'standard')
     if (etat.preview) {
       return { fileUrl: etat.preview, date: Date.now() }
     }
