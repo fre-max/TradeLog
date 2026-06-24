@@ -1,6 +1,7 @@
 import { useUIStore } from '@/store'
 import { useTrades } from '@/hooks/useTrades'
 import { cn } from '@/lib/utils'
+import { useNavigate } from 'react-router-dom'
 
 // ─── Topbar ───────────────────────────────────────────────
 // Barre horizontale en haut avec :
@@ -12,11 +13,14 @@ import { cn } from '@/lib/utils'
 interface TopbarProps {
   title: string
   onMenuClick: () => void
+  // Si true, affiche un bouton "← Retour" au lieu du burger mobile
+  showBack?: boolean
 }
 
-export function Topbar({ title, onMenuClick }: TopbarProps) {
+export function Topbar({ title, onMenuClick, showBack }: TopbarProps) {
   const openNewTrade = useUIStore((state) => state.openNewTrade)
   const { data: trades = [] } = useTrades()
+  const navigate = useNavigate()
 
   console.log('🔝 [Topbar] Rendu du composant')
 
@@ -30,16 +34,26 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
 
   return (
     <header className="h-[52px] border-b border-border flex items-center px-4 gap-3 flex-shrink-0">
-      {/* Bouton burger — visible uniquement sur mobile */}
-      <button
-        className="md:hidden text-txt2 text-xl"
-        onClick={() => {
-          console.log('🔝 [Topbar] Clic menu burger mobile')
-          onMenuClick()
-        }}
-      >
-        ☰
-      </button>
+
+      {/* Bouton retour (Settings) OU burger mobile (autres pages) */}
+      {showBack ? (
+        // Bouton retour visible sur toutes les tailles d'écran quand showBack=true
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 text-txt2 hover:text-txt transition-colors text-[13.5px]"
+        >
+          <span className="text-base leading-none">←</span>
+          <span className="hidden sm:inline">Retour</span>
+        </button>
+      ) : (
+        // Burger mobile — uniquement sur les pages normales
+        <button
+          className="md:hidden text-txt2 text-xl"
+          onClick={onMenuClick}
+        >
+          ☰
+        </button>
+      )}
 
       {/* Titre de la page */}
       <span className="text-txt font-medium text-[15px] flex-1">{title}</span>

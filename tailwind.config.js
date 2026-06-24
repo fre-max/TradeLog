@@ -4,6 +4,8 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Couleurs du thème sombre (défaut de l'application)
+        // Le thème clair est géré par des surcharges CSS dans index.css (html.light)
         bg: '#0F0F0F',
         surface: '#1A1A1A',
         surface2: '#222222',

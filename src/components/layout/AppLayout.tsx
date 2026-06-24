@@ -3,20 +3,22 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 
 // ─── Layout partagé ───────────────────────────────────────
-// Utilisé par Journal et Stats pour ne pas dupliquer
+// Utilisé par Journal, Stats et Settings pour ne pas dupliquer
 // la Sidebar et le Topbar dans chaque page
 //
-// Exemple :
-// <AppLayout title="Statistiques">
+// Exemple avec bouton retour (page Settings) :
+// <AppLayout title="Paramètres" showBack>
 //   <MonContenu />
 // </AppLayout>
 
 interface AppLayoutProps {
   children: React.ReactNode
   title: string
+  // Si true, affiche un bouton "← Retour" dans la topbar (utilisé par Settings)
+  showBack?: boolean
 }
 
-export function AppLayout({ children, title }: AppLayoutProps) {
+export function AppLayout({ children, title, showBack }: AppLayoutProps) {
   const openSidebar = useUIStore((state) => state.openSidebar)
 
   return (
@@ -26,7 +28,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
       {/* Contenu principal */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar title={title} onMenuClick={openSidebar} />
+        <Topbar title={title} onMenuClick={openSidebar} showBack={showBack} />
         {children}
       </div>
     </div>

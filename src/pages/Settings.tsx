@@ -39,7 +39,14 @@ export default function Settings() {
   // États pour les différentes sections
   const [telegramToken, setTelegramToken] = useState('')
   const [telegramStatus, setTelegramStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
-  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  // ─── Thème (sombre / clair) ─────────────────────────────────
+  // On lit la préférence depuis localStorage au montage du composant
+  // Le thème clair est activé par la classe .light sur <html>
+  const [isLightMode, setIsLightMode] = useState(() => {
+    return document.documentElement.classList.contains('light')
+  })
+
   const [showIncompleteReminder, setShowIncompleteReminder] = useState(true)
 
   // ─── Déconnexion ────────────────────────────────────────────
@@ -114,22 +121,31 @@ export default function Settings() {
     }
   }
 
-  // ─── Toggle Dark Mode ────────────────────────────────────────
+  // ─── Toggle Light Mode ────────────────────────────────────
+  // Ajoute / retire la classe .light sur <html>
+  // Les variables CSS dans index.css réagissent automatiquement
   const handleToggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode)
-    if (!isDarkMode) {
-      document.documentElement.classList.add('dark')
+    const prochainEtat = !isLightMode
+    setIsLightMode(prochainEtat)
+
+    if (prochainEtat) {
+      // Activation du thème clair
+      document.documentElement.classList.add('light')
+      localStorage.setItem('theme', 'light')
     } else {
-      document.documentElement.classList.remove('dark')
+      // Retour au thème sombre
+      document.documentElement.classList.remove('light')
+      localStorage.setItem('theme', 'dark')
     }
-    addToast(`Thème ${isDarkMode ? 'clair' : 'sombre'} activé`, 'success')
+
+    addToast(`Thème ${prochainEtat ? 'clair' : 'sombre'} activé`, 'success')
   }
 
   // ─── Rappel trades incomplets ────────────────────────────────
   const incompleteTrades = trades.filter(t => t.status === 'in_progress' || t.status === 'quick').length
 
   return (
-    <AppLayout title="Paramètres">
+    <AppLayout title="Paramètres" showBack>
       <div className="flex-1 overflow-y-auto p-4 md:p-6 max-w-4xl">
         
         {/* Section Compte */}
@@ -281,20 +297,20 @@ export default function Settings() {
         {/* Section Apparence */}
         <Section title="🎨 Apparence">
           <SettingRow
-            label="Thème sombre"
-            description="Activer le mode sombre de l'application"
+            label="Thème clair"
+            description="Basculer entre le thème sombre (défaut) et le thème clair"
             action={
               <button
                 onClick={handleToggleDarkMode}
                 className={cn(
                   'w-12 h-6 rounded-full relative transition-colors',
-                  isDarkMode ? 'bg-accent' : 'bg-surface2'
+                  isLightMode ? 'bg-accent' : 'bg-surface2'
                 )}
               >
                 <div
                   className={cn(
                     'w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform',
-                    isDarkMode ? 'translate-x-6' : 'translate-x-0.5'
+                    isLightMode ? 'translate-x-6' : 'translate-x-0.5'
                   )}
                 />
               </button>

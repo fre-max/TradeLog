@@ -20,6 +20,13 @@ const queryClient = new QueryClient({
   },
 })
 
+// Restaure la préférence de thème dès le démarrage (avant le premier rendu React)
+// Sans ça, le thème se réinitialise au sombre à chaque refresh de page
+const themeEnregistre = localStorage.getItem('theme')
+if (themeEnregistre === 'light') {
+  document.documentElement.classList.add('light')
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
 

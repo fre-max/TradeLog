@@ -1,6 +1,6 @@
-import { useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { useUIStore, useFilterStore } from '@/store'
+import { useFilterStore, useUIStore } from '@/store'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 const PAIRS = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'US30', 'BTCUSD']
 
@@ -89,11 +89,11 @@ export function Sidebar() {
         </div>
 
         <div className="mt-auto px-2 pt-4 border-t border-border">
-          <NavItem 
-            icon="⚙️" 
-            label="Paramètres" 
+          <NavItem
+            icon="⚙️"
+            label="Paramètres"
             active={location.pathname === '/settings'}
-            onClick={() => naviguerVers('/settings')}
+            onClick={() => location.pathname === '/settings' ? navigate(-1) : naviguerVers('/settings')}
           />
         </div>
       </aside>
