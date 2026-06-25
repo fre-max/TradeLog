@@ -17,6 +17,7 @@ create table trades (
   exit_type       text check (exit_type in ('tp','sl','breakeven','trailing','manual')),
   emotion         text,
   status          text check (status in ('quick', 'in_progress', 'complete')) default 'in_progress' not null,
+  journal_type    text check (journal_type in ('global','bias','poi','confirmation')) default 'global' not null,
   created_at      timestamptz default now() not null
 );
 

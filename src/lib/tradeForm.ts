@@ -6,12 +6,14 @@ export const INITIAL_FORM_STATE = {
   date_backtested: new Date().toISOString().split('T')[0],
   session: 'London',
   entry_time: '',
+  exit_time: '',
   direction: 'long' as 'long' | 'short',
   rr_planned: '',
   rr_realized: '',
   result: 'win' as 'win' | 'loss' | 'breakeven' | null,
   exit_type: 'tp' as 'tp' | 'sl' | 'breakeven' | 'trailing' | 'manual',
   emotion: '',
+  journal_type: 'global' as 'global' | 'bias' | 'poi' | 'confirmation',
 
   biais_timeframe: 'H4',
   biais_direction: 'Haussier',
@@ -31,6 +33,14 @@ export const INITIAL_FORM_STATE = {
 
   review_good: '',
   review_bad: '',
+
+  // Raisons techniques issues du catalogue (liées aux étapes)
+  biais_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
+  poi_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
+  entry_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
+  sl_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
+  tp_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
+  trailing_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
 }
 
 export type FormDataState = typeof INITIAL_FORM_STATE
@@ -70,12 +80,14 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
     date_backtested: trade.date_backtested,
     session: trade.session,
     entry_time: trade.entry_time ?? '',
+    exit_time: trade.exit_time ?? '',
     direction: trade.direction,
     rr_planned: numStr(trade.rr_planned ?? gemini?.rr),
     rr_realized: numStr(trade.rr_realized),
     result: trade.result ?? null,
     exit_type: trade.exit_type ?? 'tp',
     emotion: trade.emotion ?? '',
+    journal_type: trade.journal_type ?? 'global',
 
     biais_timeframe: biais?.timeframe ?? gemini?.timeframe ?? 'H4',
     biais_direction: str(biaisFields.direction) || (gemini?.direction === 'short' ? 'Baissier' : gemini?.direction === 'long' ? 'Haussier' : 'Haussier'),
@@ -95,6 +107,32 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
 
     review_good: str(reviewFields.good),
     review_bad: str(reviewFields.bad ?? reviewFields.improve),
+
+    // Extractions des raisons du catalogue depuis les JSONB des étapes
+    biais_catalog_reasons: ((biaisFields.catalog_reasons ?? []) as any[]).map(r => ({
+      reason_id: String(r.reason_id),
+      variant_name: String(r.variant_name),
+    })),
+    poi_catalog_reasons: ((poiFields.catalog_reasons ?? []) as any[]).map(r => ({
+      reason_id: String(r.reason_id),
+      variant_name: String(r.variant_name),
+    })),
+    entry_catalog_reasons: (((entryFields.catalog_reasons as any)?.entry ?? []) as any[]).map(r => ({
+      reason_id: String(r.reason_id),
+      variant_name: String(r.variant_name),
+    })),
+    sl_catalog_reasons: (((entryFields.catalog_reasons as any)?.sl ?? []) as any[]).map(r => ({
+      reason_id: String(r.reason_id),
+      variant_name: String(r.variant_name),
+    })),
+    tp_catalog_reasons: (((entryFields.catalog_reasons as any)?.tp ?? []) as any[]).map(r => ({
+      reason_id: String(r.reason_id),
+      variant_name: String(r.variant_name),
+    })),
+    trailing_catalog_reasons: (((entryFields.catalog_reasons as any)?.trailing ?? []) as any[]).map(r => ({
+      reason_id: String(r.reason_id),
+      variant_name: String(r.variant_name),
+    })),
   }
 }
 
@@ -155,6 +193,7 @@ export function buildStepPayloads(
       fields: {
         ...(preserveBiaisFields ?? {}),
         direction: formData.biais_direction,
+        catalog_reasons: formData.biais_catalog_reasons,
       },
     },
     {
@@ -165,7 +204,10 @@ export function buildStepPayloads(
       title: 'POI / Zone',
       timeframe: formData.poi_timeframe,
       notes: formData.poi_confluences || null,
-      fields: { zone_type: formData.poi_type },
+      fields: { 
+        zone_type: formData.poi_type,
+        catalog_reasons: formData.poi_catalog_reasons,
+      },
     },
     {
       id: stepIds.entry,
@@ -181,6 +223,12 @@ export function buildStepPayloads(
         sl: formData.entry_sl ? parseFloat(formData.entry_sl) : null,
         tp: formData.entry_tp ? parseFloat(formData.entry_tp) : null,
         trailing: formData.entry_trailing || null,
+        catalog_reasons: {
+          entry: formData.entry_catalog_reasons,
+          sl: formData.sl_catalog_reasons,
+          tp: formData.tp_catalog_reasons,
+          trailing: formData.trailing_catalog_reasons,
+        },
       },
     },
     {
@@ -206,11 +254,13 @@ export function buildTradePayload(formData: FormDataState, status: TradeWithStep
     session: formData.session,
     date_backtested: formData.date_backtested,
     entry_time: formData.entry_time || null,
+    exit_time: formData.exit_time || null,
     result: formData.result,
     rr_planned: formData.rr_planned ? parseFloat(formData.rr_planned) : null,
     rr_realized: formData.rr_realized ? parseFloat(formData.rr_realized) : null,
     exit_type: formData.exit_type,
     emotion: formData.emotion || null,
+    journal_type: formData.journal_type,
     status,
   }
 }

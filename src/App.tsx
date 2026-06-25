@@ -7,6 +7,7 @@ import Journal from '@/pages/Journal'
 import Stats from '@/pages/Stats'
 import Settings from '@/pages/Settings'
 import Auth from '@/pages/Auth'
+import Catalog from '@/pages/Catalog'
 import { ToastContainer } from '@/components/ui/Toast'
 import { BrouillonButton } from '@/components/trade/BrouillonButton'
 
@@ -67,12 +68,20 @@ export default function App() {
             element={session ? <Journal /> : <Navigate to="/auth" replace />}
           />
           <Route
+            path="/journal/:type"
+            element={session ? <Journal /> : <Navigate to="/auth" replace />}
+          />
+          <Route
             path="/stats"
             element={session ? <Stats /> : <Navigate to="/auth" replace />}
           />
           <Route
             path="/settings"
             element={session ? <Settings /> : <Navigate to="/auth" replace />}
+          />
+          <Route
+            path="/catalog"
+            element={session ? <Catalog /> : <Navigate to="/auth" replace />}
           />
 
           {/* Auth — redirige vers / si déjà connecté */}

@@ -8,6 +8,7 @@ export const ExitTypeEnum = z.enum(['tp','sl','breakeven','trailing','manual'])
 export const StepTypeEnum = z.enum(['biais','poi','entry','result','custom','news'])
 export const ImageSourceEnum = z.enum(['telegram','upload','url'])
 export const StatusEnum = z.enum(['quick', 'in_progress', 'complete'])
+export const JournalTypeEnum = z.enum(['global', 'bias', 'poi', 'confirmation'])
 export const EmotionEnum = z.enum([
   'Discipliné','Confiant','FOMO','Impatient',
   'Revenge','Hésitant','Neutre','Focalisé'
@@ -28,6 +29,8 @@ export const TradeSchema = z.object({
   exit_type: ExitTypeEnum.optional().nullable(),
   emotion: EmotionEnum.optional().nullable(),
   status: StatusEnum.default('in_progress'),
+  // Le type de journal permet de masquer/afficher dynamiquement les étapes du formulaire et de filtrer l'affichage
+  journal_type: JournalTypeEnum.default('global'),
   created_at: z.string(),
 })
 
@@ -79,3 +82,38 @@ export interface TelegramImageResult {
   fileUrl: string
   date: number
 }
+
+// ─── TYPES POUR LE CATALOGUE DE RAISONS TECHNIQUES ─────────
+
+// Types de contexte pour les raisons techniques
+export const ReasonTypeEnum = z.enum(['entry', 'sl', 'tp', 'trailing', 'biais', 'poi', 'confirmation'])
+export type ReasonType = z.infer<typeof ReasonTypeEnum>
+
+// Schéma et type pour une variante de raison (ex: mineur, moyen, grand)
+export const ReasonVariantSchema = z.object({
+  id: z.string().uuid(),
+  reason_id: z.string().uuid(),
+  name: z.string(),
+  image_url: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  created_at: z.string(),
+})
+
+export type ReasonVariant = z.infer<typeof ReasonVariantSchema>
+export type ReasonVariantInsert = Omit<ReasonVariant, 'id' | 'created_at'>
+
+// Schéma et type pour un élément du catalogue de raisons (ex: Wyckoff candle)
+export const ReasonCatalogSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  title: z.string(),
+  description: z.string().optional().nullable(),
+  type: ReasonTypeEnum,
+  created_at: z.string(),
+})
+
+export type ReasonCatalogItem = z.infer<typeof ReasonCatalogSchema> & {
+  variants: ReasonVariant[]
+}
+export type ReasonCatalogInsert = Omit<z.infer<typeof ReasonCatalogSchema>, 'id' | 'user_id' | 'created_at'>
+

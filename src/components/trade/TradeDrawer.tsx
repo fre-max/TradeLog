@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useUIStore } from '@/store'
 import { cn } from '@/lib/utils'
 import { StepBlock } from './StepBlock'
@@ -7,6 +7,7 @@ import { useUpdateTrade } from '@/hooks/useTrades'
 import { useQuickEntry } from '@/hooks/useQuickEntry'
 import { ImageAnalysisUpload } from './ImageAnalysisUpload'
 import { useQueryClient } from '@tanstack/react-query'
+import { useParams } from 'react-router-dom'
 import {
   buildStepPayloads,
   buildTradePayload,
@@ -19,14 +20,6 @@ import {
 } from '@/lib/tradeForm'
 
 export type { FormDataState }
-
-const DEFAULT_STEPS = [
-  { id: 'step-1', title: 'Infos générales', type: 'general' as const },
-  { id: 'step-2', title: 'Biais', type: 'biais' as const },
-  { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
-  { id: 'step-4', title: 'Entrée', type: 'entry' as const },
-  { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
-]
 
 export function TradeDrawer() {
   const isNewTradeOpen = useUIStore((state) => state.isNewTradeOpen)
@@ -46,6 +39,50 @@ export function TradeDrawer() {
   const [saving, setSaving] = useState(false)
   const [manualMode, setManualMode] = useState(false)
 
+  // On récupère le type de journal depuis les paramètres d'URL ( bias, poi, confirmation, global )
+  const { type } = useParams<{ type: string }>()
+  const currentJournalType = (type || 'global') as 'global' | 'bias' | 'poi' | 'confirmation'
+
+  // Sélection dynamique des étapes du formulaire selon le type de journal choisi dans le formulaire
+  const stepsAffichees = useMemo(() => {
+    const typeJournal = formData.journal_type || 'global'
+    
+    if (typeJournal === 'bias') {
+      return [
+        { id: 'step-1', title: 'Infos générales (Biais)', type: 'general' as const },
+        { id: 'step-2', title: 'Biais HTF', type: 'biais' as const },
+        { id: 'step-5', title: 'Résultat & Revue Biais', type: 'result' as const },
+      ]
+    }
+    
+    if (typeJournal === 'poi') {
+      return [
+        { id: 'step-1', title: 'Infos générales (POI)', type: 'general' as const },
+        { id: 'step-2', title: 'Biais (Contexte)', type: 'biais' as const },
+        { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
+        { id: 'step-5', title: 'Résultat POI', type: 'result' as const },
+      ]
+    }
+    
+    if (typeJournal === 'confirmation') {
+      return [
+        { id: 'step-1', title: 'Infos générales (Confirmation)', type: 'general' as const },
+        { id: 'step-3', title: 'Zone POI (Contexte)', type: 'poi' as const },
+        { id: 'step-4', title: 'Entrée (Confirmation LTF)', type: 'entry' as const },
+        { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
+      ]
+    }
+    
+    // Par défaut (global) : affichage de toutes les étapes
+    return [
+      { id: 'step-1', title: 'Infos générales', type: 'general' as const },
+      { id: 'step-2', title: 'Biais', type: 'biais' as const },
+      { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
+      { id: 'step-4', title: 'Entrée', type: 'entry' as const },
+      { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
+    ]
+  }, [formData.journal_type])
+
   useEffect(() => {
     if (!isNewTradeOpen) return
 
@@ -54,11 +91,15 @@ export function TradeDrawer() {
       setStepIds(extractStepIds(editingTrade))
       setManualMode(true)
     } else {
-      setFormData(INITIAL_FORM_STATE)
+      // Pour un nouveau trade, on initialise le type de journal sur celui de la page active
+      setFormData({
+        ...INITIAL_FORM_STATE,
+        journal_type: currentJournalType,
+      })
       setStepIds({})
       setManualMode(false)
     }
-  }, [isNewTradeOpen, editingTrade])
+  }, [isNewTradeOpen, editingTrade, currentJournalType])
 
   const handleClose = () => {
     if (!saving && !isUpdating && !isCreatingQuick) {
@@ -188,7 +229,7 @@ export function TradeDrawer() {
               onManualMode={() => setManualMode(true)}
             />
           ) : (
-            DEFAULT_STEPS.map((step, index) => (
+            stepsAffichees.map((step, index) => (
               <StepBlock
                 key={step.id}
                 number={index + 1}

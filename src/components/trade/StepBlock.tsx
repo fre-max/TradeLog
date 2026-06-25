@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ComboField } from '@/components/fields/ComboField'
+import { CatalogReasonSelector } from '@/components/fields/CatalogReasonSelector'
 import type { FormDataState } from '@/lib/tradeForm'
 import { useBrouillonStore } from '@/store/brouillonStore'
 import type { Brouillon } from '@/store/brouillonStore'
@@ -197,12 +198,28 @@ const createFieldUpdater = (setFormData: React.Dispatch<React.SetStateAction<For
     setFormData((prev) => ({ ...prev, [key]: val }))
   }
 
-// Étape 1 : Informations générales du trade (Paire, date, session, heure)
+// Étape 1 : Informations générales du trade (Paire, date, session, heure, type de journal)
 function GeneralFields({ formData, setFormData }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>> }) {
   const updateField = createFieldUpdater(setFormData)
 
+  const isBiais = formData.journal_type === 'bias'
+
   return (
     <>
+      <div className="mb-3">
+        <Field label="Type de Journal">
+          <Select
+            value={formData.journal_type}
+            onChange={(e) => updateField('journal_type', e.target.value as any)}
+          >
+            <option value="global">📋 Global</option>
+            <option value="bias">🎯 Biais</option>
+            <option value="poi">🗺️ POI / Zones</option>
+            <option value="confirmation">⚡ Confirmation</option>
+          </Select>
+        </Field>
+      </div>
+
       <FieldGrid>
         <Field label="Paire">
           <Select
@@ -232,15 +249,25 @@ function GeneralFields({ formData, setFormData }: { formData: FormDataState; set
             ))}
           </Select>
         </Field>
-        <Field label="Heure d'entrée">
+        <Field label={isBiais ? "Début validité Biais" : "Heure d'entrée"}>
           <Input
             type="time"
             value={formData.entry_time}
             onChange={(e) => updateField('entry_time', e.target.value)}
           />
         </Field>
+        {isBiais && (
+          <Field label="Fin validité Biais">
+            <Input
+              type="time"
+              value={formData.exit_time}
+              onChange={(e) => updateField('exit_time', e.target.value)}
+            />
+          </Field>
+        )}
       </FieldGrid>
-      <Field label="Direction">
+      
+      <Field label={isBiais ? "Biais (Direction)" : "Direction"}>
         <div className="flex rounded-md overflow-hidden border border-border2">
           {(['long', 'short'] as const).map((d) => (
             <button
@@ -254,7 +281,7 @@ function GeneralFields({ formData, setFormData }: { formData: FormDataState; set
                 formData.direction !== d && 'bg-bg text-txt3'
               )}
             >
-              {d === 'long' ? '↑ Long' : '↓ Short'}
+              {d === 'long' ? '↑ Long (Acheteur)' : '↓ Short (Vendeur)'}
             </button>
           ))}
         </div>
@@ -302,6 +329,15 @@ function BiaisFields({ formData, setFormData }: { formData: FormDataState; setFo
           />
         </Field>
       </div>
+      <div className="mb-3">
+        <Field label="Concepts du Catalogue (Biais)">
+          <CatalogReasonSelector
+            contextType={['biais', 'confirmation']}
+            value={formData.biais_catalog_reasons}
+            onChange={(val) => updateField('biais_catalog_reasons', val)}
+          />
+        </Field>
+      </div>
       <ImagePlaceholder label="Chart biais" />
     </>
   )
@@ -343,6 +379,15 @@ function PoiFields({ formData, setFormData }: { formData: FormDataState; setForm
             presets={['OB aligné avec 50% du dernier swing','FVG en dessous comme support','Zone premium / discount']}
             value={formData.poi_confluences}
             onChange={(val) => updateField('poi_confluences', val)}
+          />
+        </Field>
+      </div>
+      <div className="mb-3">
+        <Field label="Concepts du Catalogue (POI)">
+          <CatalogReasonSelector
+            contextType="poi"
+            value={formData.poi_catalog_reasons}
+            onChange={(val) => updateField('poi_catalog_reasons', val)}
           />
         </Field>
       </div>
@@ -438,12 +483,52 @@ function EntryFields({ formData, setFormData }: { formData: FormDataState; setFo
           </Select>
         </Field>
       </FieldGrid>
+      <div className="mb-4 pt-3 border-t border-border/40 space-y-3">
+        <p className="text-[11px] font-semibold text-txt2 uppercase tracking-wider">Concepts du Catalogue Technique</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <Field label="Concepts SL (Catalogue)">
+            <CatalogReasonSelector
+              contextType="sl"
+              value={formData.sl_catalog_reasons}
+              onChange={(val) => updateField('sl_catalog_reasons', val)}
+            />
+          </Field>
+
+          <Field label="Concepts TP (Catalogue)">
+            <CatalogReasonSelector
+              contextType="tp"
+              value={formData.tp_catalog_reasons}
+              onChange={(val) => updateField('tp_catalog_reasons', val)}
+            />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <Field label="Concepts Trailing (Catalogue)">
+            <CatalogReasonSelector
+              contextType="trailing"
+              value={formData.trailing_catalog_reasons}
+              onChange={(val) => updateField('trailing_catalog_reasons', val)}
+            />
+          </Field>
+
+          <Field label="Concepts Entrée (Catalogue)">
+            <CatalogReasonSelector
+              contextType={['entry', 'confirmation']}
+              value={formData.entry_catalog_reasons}
+              onChange={(val) => updateField('entry_catalog_reasons', val)}
+            />
+          </Field>
+        </div>
+      </div>
+
       <div className="mb-3">
         <Field label="Raisons de l'entrée">
           <ComboField
             fieldKey="entry_reasons"
             placeholder="Ex: CHoCH M5 sur le POI..."
-            presets={["CHoCH M5 confirmé sur le POI","Bougie englobante haussière","Retest du bris de structure","Confluences multiples alignées"]}
+            presets={["CHoCH M5 confirmed sur le POI","Bougie englobante haussière","Retest du bris de structure","Confluences multiples alignées"]}
             value={formData.entry_reasons}
             onChange={(val) => updateField('entry_reasons', val)}
           />
@@ -458,21 +543,44 @@ function EntryFields({ formData, setFormData }: { formData: FormDataState; setFo
 function ResultFields({ formData, setFormData }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>> }) {
   const updateField = createFieldUpdater(setFormData)
 
-  const buttons: { key: 'win' | 'loss' | 'breakeven'; label: string }[] = [
-    { key: 'win', label: '✓ Win' },
-    { key: 'loss', label: '✗ Loss' },
-    { key: 'breakeven', label: '— Breakeven' },
+  const typeJournal = formData.journal_type || 'global'
+
+  // Boutons personnalisés selon le type de journal
+  let labelResultat = "Résultat"
+  let buttons = [
+    { key: 'win' as const, label: '✓ Win' },
+    { key: 'loss' as const, label: '✗ Loss' },
+    { key: 'breakeven' as const, label: '— Breakeven' },
   ]
+
+  if (typeJournal === 'bias') {
+    labelResultat = "Biais Correct ?"
+    buttons = [
+      { key: 'win' as const, label: '✓ Oui' },
+      { key: 'loss' as const, label: '✗ Non' },
+      { key: 'breakeven' as const, label: '— Invalide / BE' },
+    ]
+  } else if (typeJournal === 'poi') {
+    labelResultat = "Réaction du POI ?"
+    buttons = [
+      { key: 'win' as const, label: '✓ Réagi' },
+      { key: 'loss' as const, label: '✗ Cassé' },
+      { key: 'breakeven' as const, label: '— Non atteint' },
+    ]
+  }
+
   const colors = {
     win: 'border-win bg-win/10 text-win',
     loss: 'border-loss bg-loss/10 text-loss',
     breakeven: 'border-be bg-be/10 text-be',
   }
 
+  const afficherInfosFinancieres = typeJournal === 'global' || typeJournal === 'confirmation'
+
   return (
     <>
       <div className="mb-3">
-        <label className="text-txt3 text-[11px] font-medium uppercase tracking-wider block mb-1.5">Résultat</label>
+        <label className="text-txt3 text-[11px] font-medium uppercase tracking-wider block mb-1.5">{labelResultat}</label>
         <div className="flex gap-2">
           {buttons.map(({ key, label }) => (
             <button
@@ -489,28 +597,32 @@ function ResultFields({ formData, setFormData }: { formData: FormDataState; setF
           ))}
         </div>
       </div>
-      <FieldGrid>
-        <Field label="R:R réalisé">
-          <Input
-            type="number"
-            step="0.1"
-            placeholder="0.0"
-            value={formData.rr_realized}
-            onChange={(e) => updateField('rr_realized', e.target.value)}
-          />
-        </Field>
-        <Field label="État émotionnel">
-          <Select
-            value={formData.emotion}
-            onChange={(e) => updateField('emotion', e.target.value)}
-          >
-            <option value="">Sélectionner...</option>
-            {['Discipliné','Confiant','FOMO','Impatient','Revenge','Hésitant','Neutre','Focalisé'].map((e) => (
-              <option key={e} value={e}>{e}</option>
-            ))}
-          </Select>
-        </Field>
-      </FieldGrid>
+      
+      {afficherInfosFinancieres && (
+        <FieldGrid>
+          <Field label="R:R réalisé">
+            <Input
+              type="number"
+              step="0.1"
+              placeholder="0.0"
+              value={formData.rr_realized}
+              onChange={(e) => updateField('rr_realized', e.target.value)}
+            />
+          </Field>
+          <Field label="État émotionnel">
+            <Select
+              value={formData.emotion}
+              onChange={(e) => updateField('emotion', e.target.value)}
+            >
+              <option value="">Sélectionner...</option>
+              {['Discipliné','Confiant','FOMO','Impatient','Revenge','Hésitant','Neutre','Focalisé'].map((e) => (
+                <option key={e} value={e}>{e}</option>
+              ))}
+            </Select>
+          </Field>
+        </FieldGrid>
+      )}
+
       <div className="flex flex-col gap-3">
         <Field label="Ce que j'ai bien fait">
           <Textarea

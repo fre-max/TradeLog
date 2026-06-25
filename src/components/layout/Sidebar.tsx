@@ -6,10 +6,16 @@ const PAIRS = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'US30', 'BTCUSD']
 
 // ─── Items de navigation ──────────────────────────────────
 // Chaque item correspond à une route de l'app
+const JOURNAL_ITEMS = [
+  { icon: '📋', label: 'Global', path: '/' },
+  { icon: '🎯', label: 'Journal Biais', path: '/journal/bias' },
+  { icon: '🗺️', label: 'Journal POI', path: '/journal/poi' },
+  { icon: '⚡', label: 'Journal Confirmation', path: '/journal/confirmation' },
+]
+
 const NAV_ITEMS = [
-  { icon: '📋', label: 'Tous les trades', path: '/' },
   { icon: '📊', label: 'Statistiques', path: '/stats' },
-  { icon: '🔍', label: 'Review hebdo', path: '/review' },
+  { icon: '📚', label: 'Catalogue raisons', path: '/catalog' },
 ]
 
 export function Sidebar() {
@@ -60,9 +66,23 @@ export function Sidebar() {
           </button>
         </div>
 
-        {/* Navigation principale */}
+        {/* Catégories de Journaux */}
+        <div className="px-2 mb-4">
+          <p className="text-[11px] font-medium text-txt3 uppercase tracking-wider px-2 mb-1">Journaux</p>
+          {JOURNAL_ITEMS.map((item) => (
+            <NavItem
+              key={item.path}
+              icon={item.icon}
+              label={item.label}
+              active={location.pathname === item.path}
+              onClick={() => naviguerVers(item.path)}
+            />
+          ))}
+        </div>
+
+        {/* Autres outils de navigation */}
         <div className="px-2 mb-6">
-          <p className="text-[11px] font-medium text-txt3 uppercase tracking-wider px-2 mb-1">Journal</p>
+          <p className="text-[11px] font-medium text-txt3 uppercase tracking-wider px-2 mb-1">Outils</p>
           {NAV_ITEMS.map((item) => (
             <NavItem
               key={item.path}

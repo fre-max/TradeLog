@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTrades } from '@/hooks/useTrades'
 import { useUIStore } from '@/store'
 import { cn } from '@/lib/utils'
+import { exportCsv } from '@/lib/exportCsv'
 
 export default function Settings() {
   const navigate = useNavigate()
@@ -59,38 +60,14 @@ export default function Settings() {
     }
   }
 
-  // ─── Export CSV ────────────────────────────────────────────
+  // ─── Export CSV enrichi (avec liens images) ──────────────────────
   const handleExportCSV = () => {
     if (trades.length === 0) {
       addToast('Aucun trade à exporter', 'error')
       return
     }
-
-    const headers = ['Date', 'Paire', 'Direction', 'Session', 'R:R Prévu', 'R:R Réalisé', 'Résultat', 'Statut', 'Émotion']
-    const rows = trades.map(t => [
-      t.date_backtested,
-      t.pair,
-      t.direction,
-      t.session,
-      t.rr_planned ?? '',
-      t.rr_realized ?? '',
-      t.result ?? '',
-      t.status,
-      t.emotion ?? ''
-    ])
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n')
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = `tradelog_export_${new Date().toISOString().split('T')[0]}.csv`
-    link.click()
-    
-    addToast('Export CSV réussi !', 'success')
+    exportCsv(trades)
+    addToast(`${trades.length} trade(s) exporté(s) en CSV !`, 'success')
   }
 
   // ─── Test Telegram ──────────────────────────────────────────
@@ -164,20 +141,33 @@ export default function Settings() {
           />
         </Section>
 
-        {/* Section Données */}
+        {/* Section Données — Export CSV + info PDF */}
         <Section title="📊 Données">
           <SettingRow
-            label="Export CSV"
-            description={`Exporter ${trades.length} trade(s) au format CSV`}
+            label="Export Excel / CSV"
+            description={`Exporte ${trades.length} trade(s) avec toutes les données et liens vers les images`}
             action={
               <button
                 onClick={handleExportCSV}
-                className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors"
+                className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors whitespace-nowrap"
               >
-                Exporter
+                📊 Exporter CSV
               </button>
             }
           />
+          <div className="border-t border-border pt-3 mt-1">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-txt text-[13.5px] font-medium">Export PDF par trade</p>
+                <p className="text-txt3 text-[12px] mt-0.5">
+                  Disponible dans le détail de chaque trade — bouton « 📄 PDF »
+                </p>
+              </div>
+              <span className="text-txt3 text-[12px] px-2.5 py-1 bg-surface2 border border-border2 rounded-md whitespace-nowrap flex-shrink-0">
+                Dans le détail →
+              </span>
+            </div>
+          </div>
         </Section>
 
         {/* Section Telegram */}

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { SkeletonSection, SkeletonLine } from '@/components/ui/Skeleton'
 import { QuickEntryBanner } from '@/components/trade/QuickEntryBanner'
 import type { GeminiAnalysis } from '@/hooks/useQuickEntry'
+import { exportPdf } from '@/lib/exportPdf'
 
 // ─── TradeDetail ──────────────────────────────────────────
 // Panneau latéral qui affiche le détail complet d'un trade
@@ -16,6 +17,8 @@ export function TradeDetail() {
   const openEditTrade = useUIStore((state) => state.openEditTrade)
   const selectedTrade = useUIStore((state) => state.selectedTrade)
   const [lightbox, setLightbox] = useState<string | null>(null)
+  // État de génération du PDF (affiche un spinner pendant le téléchargement des images)
+  const [generationPdf, setGenerationPdf] = useState(false)
 
   console.log('🔍 [TradeDetail] Rendu, isDetailOpen =', isDetailOpen, 'selectedTradeId =', selectedTrade?.id)
 
@@ -84,6 +87,26 @@ export function TradeDetail() {
             {selectedTrade.rr_realized != null && (
               <span className="text-win text-xl font-semibold">{formatRR(selectedTrade.rr_realized)}</span>
             )}
+            {/* Bouton export PDF du trade */}
+            <button
+              onClick={async () => {
+                setGenerationPdf(true)
+                try {
+                  await exportPdf(selectedTrade)
+                } finally {
+                  setGenerationPdf(false)
+                }
+              }}
+              disabled={generationPdf}
+              title="Télécharger le rapport PDF de ce trade"
+              className="px-3 py-1.5 bg-surface2 border border-border2 text-txt2 rounded-md text-[12px] font-medium hover:bg-surface hover:text-txt transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {generationPdf ? (
+                <><span className="w-3 h-3 border-2 border-txt3/40 border-t-txt2 rounded-full animate-spin" /> Génération...</>
+              ) : (
+                '📄 PDF'
+              )}
+            </button>
             <button
               onClick={() => openEditTrade(selectedTrade)}
               className="px-3 py-1.5 bg-accent text-white rounded-md text-[12px] font-medium hover:bg-accent/90 transition-colors"

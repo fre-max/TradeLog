@@ -13,6 +13,7 @@ import { useUIStore, useFilterStore } from '@/store'
 import { formatDate, formatRR, cn } from '@/lib/utils'
 import { SkeletonTableRow } from '@/components/ui/Skeleton'
 import { StatusBadge } from '@/components/trade/StatusBadge'
+import { useParams } from 'react-router-dom'
 import type { TradeWithSteps } from '@/types'
 
 // ─── TradeTable ───────────────────────────────────────────
@@ -21,6 +22,7 @@ import type { TradeWithSteps } from '@/types'
 // - Skeleton loader pendant le chargement
 // - Empty state enrichi quand 0 trades
 // - Tri par colonnes
+// - Adaptation dynamique des colonnes selon le sous-journal choisi
 
 export function TradeTable() {
   const { data: trades = [], isLoading, isError } = useTrades()
@@ -33,127 +35,307 @@ export function TradeTable() {
   const filterResult = useFilterStore((state) => state.filterResult)
   const [sorting, setSorting] = useState<SortingState>([])
 
+  // On récupère le type de journal depuis les paramètres d'URL ( bias, poi, confirmation, global )
+  const { type } = useParams<{ type: string }>()
+  const journalType = (type || 'global') as 'global' | 'bias' | 'poi' | 'confirmation'
+
   // ─── Définition des colonnes ──────────────────────────────
   const col = createColumnHelper<TradeWithSteps>()
 
-  const columns = [
-    col.accessor('date_backtested', {
-      header: 'Date',
-      cell: (info) => <span className="text-txt2">{formatDate(info.getValue())}</span>,
-    }),
-    col.accessor('pair', {
-      header: 'Paire',
-      cell: (info) => <span className="text-txt font-medium">{info.getValue()}</span>,
-    }),
-    col.accessor('direction', {
-      header: 'Direction',
-      cell: (info) => (
-        <Badge variant={info.getValue() === 'long' ? 'long' : 'short'}>
-          {info.getValue() === 'long' ? '↑ Long' : '↓ Short'}
-        </Badge>
-      ),
-    }),
-    col.accessor('steps', {
-      header: 'Setup',
-      cell: (info) => {
-        const entryStep = info.getValue().find((s) => s.type === 'entry')
-        return <span className="text-txt2">{entryStep?.title ?? '—'}</span>
-      },
-    }),
-    col.accessor('session', {
-      header: 'Session',
-      cell: (info) => <span className="text-txt2">{info.getValue()}</span>,
-    }),
-    col.accessor('rr_realized', {
-      header: 'R:R',
-      cell: (info) => <span className="text-txt font-medium">{formatRR(info.getValue())}</span>,
-    }),
-    col.accessor('result', {
-      header: 'Résultat',
-      cell: (info) => {
-        const v = info.getValue()
-        if (!v) return <span className="text-txt3">—</span>
-        return <Badge variant={v}>{v === 'win' ? '✓ Win' : v === 'loss' ? '✗ Loss' : '— BE'}</Badge>
-      },
-    }),
-    col.accessor('status', {
-      header: 'Statut',
-      cell: (info) => {
-        const statut = (info.getValue() || 'in_progress') as 'quick' | 'in_progress' | 'complete'
-        return <StatusBadge status={statut} />
-      },
-    }),
-    col.accessor('steps', {
-      id: 'steps_count',
-      header: 'Étapes',
-      cell: (info) => (
-        <div className="flex gap-1">
-          {info.getValue().map((_, i) => (
-            <div key={i} className="w-1.5 h-1.5 rounded-full bg-accent" />
-          ))}
-        </div>
-      ),
-    }),
-    col.display({
-      id: 'actions',
-      header: 'Actions',
-      cell: (info) => (
-        <div className="flex gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              openEditTrade(info.row.original)
-            }}
-            className="px-3 py-1.5 bg-accent text-white rounded-md text-[11.5px] font-medium hover:bg-accent/90 transition-colors"
-          >
-            Modifier
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              if (confirm('Êtes-vous sûr de vouloir supprimer ce trade ?')) {
-                deleteTrade(info.row.original.id)
-                  .then(() => {
-                    addToast('Trade supprimé avec succès', 'success')
-                  })
-                  .catch((err) => {
-                    addToast(err.message || 'Erreur lors de la suppression', 'error')
-                  })
-              }
-            }}
-            disabled={isDeleting}
-            className="px-3 py-1.5 bg-loss/10 text-loss border border-loss/30 rounded-md text-[11.5px] font-medium hover:bg-loss/20 transition-colors disabled:opacity-50"
-          >
-            Supprimer
-          </button>
-        </div>
-      ),
-    }),
-  ]
+  const columns = useMemo(() => {
+    // Colonnes communes à toutes les configurations de journal
+    const baseCols = [
+      col.accessor('date_backtested', {
+        header: 'Date',
+        cell: (info) => <span className="text-txt2">{formatDate(info.getValue())}</span>,
+      }),
+      col.accessor('pair', {
+        header: 'Paire',
+        cell: (info) => <span className="text-txt font-medium">{info.getValue()}</span>,
+      }),
+      col.accessor('direction', {
+        header: journalType === 'bias' ? 'Biais' : 'Direction',
+        cell: (info) => (
+          <Badge variant={info.getValue() === 'long' ? 'long' : 'short'}>
+            {info.getValue() === 'long' ? '↑ Long' : '↓ Short'}
+          </Badge>
+        ),
+      }),
+    ]
+
+    // Configuration des colonnes pour le Journal de Biais
+    if (journalType === 'bias') {
+      return [
+        ...baseCols,
+        col.accessor('steps', {
+          id: 'biais_timeframe',
+          header: 'UT Biais',
+          cell: (info) => {
+            const step = info.getValue().find((s) => s.type === 'biais')
+            return <span className="text-txt2">{step?.timeframe ?? '—'}</span>
+          },
+        }),
+        col.accessor('entry_time', {
+          header: 'Début Biais',
+          cell: (info) => <span className="text-txt2">{info.getValue() ? String(info.getValue()).slice(0, 5) : '—'}</span>,
+        }),
+        col.accessor('exit_time', {
+          header: 'Fin Biais',
+          cell: (info) => <span className="text-txt2">{info.getValue() ? String(info.getValue()).slice(0, 5) : '—'}</span>,
+        }),
+        col.accessor('result', {
+          header: 'Biais Correct ?',
+          cell: (info) => {
+            const v = info.getValue()
+            if (!v) return <span className="text-txt3">—</span>
+            return <Badge variant={v}>{v === 'win' ? '✓ Oui' : v === 'loss' ? '✗ Non' : '— BE'}</Badge>
+          },
+        }),
+        col.accessor('status', {
+          header: 'Statut',
+          cell: (info) => {
+            const statut = (info.getValue() || 'in_progress') as 'quick' | 'in_progress' | 'complete'
+            return <StatusBadge status={statut} />
+          },
+        }),
+        col.display({
+          id: 'actions',
+          header: 'Actions',
+          cell: (info) => (
+            <div className="flex gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openEditTrade(info.row.original)
+                }}
+                className="px-3 py-1.5 bg-accent text-white rounded-md text-[11.5px] font-medium hover:bg-accent/90 transition-colors"
+              >
+                Modifier
+              </button>
+            </div>
+          ),
+        }),
+      ]
+    }
+
+    // Configuration des colonnes pour le Journal des Zones POI
+    if (journalType === 'poi') {
+      return [
+        ...baseCols,
+        col.accessor('steps', {
+          id: 'poi_timeframe',
+          header: 'UT POI',
+          cell: (info) => {
+            const step = info.getValue().find((s) => s.type === 'poi')
+            return <span className="text-txt2">{step?.timeframe ?? '—'}</span>
+          },
+        }),
+        col.accessor('steps', {
+          id: 'poi_type',
+          header: 'Type POI',
+          cell: (info) => {
+            const step = info.getValue().find((s) => s.type === 'poi')
+            const fields = (step?.fields ?? {}) as Record<string, unknown>
+            return <span className="text-txt2">{String(fields.zone_type || '—')}</span>
+          },
+        }),
+        col.accessor('result', {
+          header: 'Réaction ?',
+          cell: (info) => {
+            const v = info.getValue()
+            if (!v) return <span className="text-txt3">—</span>
+            return <Badge variant={v}>{v === 'win' ? '✓ Réagi' : v === 'loss' ? '✗ Cassé' : '— BE'}</Badge>
+          },
+        }),
+        col.accessor('status', {
+          header: 'Statut',
+          cell: (info) => {
+            const statut = (info.getValue() || 'in_progress') as 'quick' | 'in_progress' | 'complete'
+            return <StatusBadge status={statut} />
+          },
+        }),
+        col.display({
+          id: 'actions',
+          header: 'Actions',
+          cell: (info) => (
+            <div className="flex gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openEditTrade(info.row.original)
+                }}
+                className="px-3 py-1.5 bg-accent text-white rounded-md text-[11.5px] font-medium hover:bg-accent/90 transition-colors"
+              >
+                Modifier
+              </button>
+            </div>
+          ),
+        }),
+      ]
+    }
+
+    // Configuration des colonnes pour le Journal des Confirmations LTF
+    if (journalType === 'confirmation') {
+      return [
+        ...baseCols,
+        col.accessor('steps', {
+          id: 'setup_ltf',
+          header: 'Setup LTF',
+          cell: (info) => {
+            const step = info.getValue().find((s) => s.type === 'entry')
+            const fields = (step?.fields ?? {}) as Record<string, unknown>
+            return <span className="text-txt2">{String(fields.setup || '—')}</span>
+          },
+        }),
+        col.accessor('rr_planned', {
+          header: 'R:R Prévu',
+          cell: (info) => <span className="text-txt font-medium">{formatRR(info.getValue())}</span>,
+        }),
+        col.accessor('rr_realized', {
+          header: 'R:R Réalisé',
+          cell: (info) => <span className="text-txt font-medium">{formatRR(info.getValue())}</span>,
+        }),
+        col.accessor('result', {
+          header: 'Résultat',
+          cell: (info) => {
+            const v = info.getValue()
+            if (!v) return <span className="text-txt3">—</span>
+            return <Badge variant={v}>{v === 'win' ? '✓ Win' : v === 'loss' ? '✗ Loss' : '— BE'}</Badge>
+          },
+        }),
+        col.accessor('emotion', {
+          header: 'Émotion',
+          cell: (info) => <span className="text-txt2">{info.getValue() ?? '—'}</span>,
+        }),
+        col.accessor('status', {
+          header: 'Statut',
+          cell: (info) => {
+            const statut = (info.getValue() || 'in_progress') as 'quick' | 'in_progress' | 'complete'
+            return <StatusBadge status={statut} />
+          },
+        }),
+        col.display({
+          id: 'actions',
+          header: 'Actions',
+          cell: (info) => (
+            <div className="flex gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openEditTrade(info.row.original)
+                }}
+                className="px-3 py-1.5 bg-accent text-white rounded-md text-[11.5px] font-medium hover:bg-accent/90 transition-colors"
+              >
+                Modifier
+              </button>
+            </div>
+          ),
+        }),
+      ]
+    }
+
+    // Par défaut, configuration du Journal Global (affichage classique)
+    return [
+      ...baseCols,
+      col.accessor('steps', {
+        header: 'Setup',
+        cell: (info) => {
+          const entryStep = info.getValue().find((s) => s.type === 'entry')
+          return <span className="text-txt2">{entryStep?.title ?? '—'}</span>
+        },
+      }),
+      col.accessor('session', {
+        header: 'Session',
+        cell: (info) => <span className="text-txt2">{info.getValue()}</span>,
+      }),
+      col.accessor('rr_realized', {
+        header: 'R:R',
+        cell: (info) => <span className="text-txt font-medium">{formatRR(info.getValue())}</span>,
+      }),
+      col.accessor('result', {
+        header: 'Résultat',
+        cell: (info) => {
+          const v = info.getValue()
+          if (!v) return <span className="text-txt3">—</span>
+          return <Badge variant={v}>{v === 'win' ? '✓ Win' : v === 'loss' ? '✗ Loss' : '— BE'}</Badge>
+        },
+      }),
+      col.accessor('status', {
+        header: 'Statut',
+        cell: (info) => {
+          const statut = (info.getValue() || 'in_progress') as 'quick' | 'in_progress' | 'complete'
+          return <StatusBadge status={statut} />
+        },
+      }),
+      col.accessor('steps', {
+        id: 'steps_count',
+        header: 'Étapes',
+        cell: (info) => (
+          <div className="flex gap-1">
+            {info.getValue().map((_, i) => (
+              <div key={i} className="w-1.5 h-1.5 rounded-full bg-accent" />
+            ))}
+          </div>
+        ),
+      }),
+      col.display({
+        id: 'actions',
+        header: 'Actions',
+        cell: (info) => (
+          <div className="flex gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openEditTrade(info.row.original)
+              }}
+              className="px-3 py-1.5 bg-accent text-white rounded-md text-[11.5px] font-medium hover:bg-accent/90 transition-colors"
+            >
+              Modifier
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (confirm('Êtes-vous sûr de vouloir supprimer ce trade ?')) {
+                  deleteTrade(info.row.original.id)
+                    .then(() => {
+                      addToast('Trade supprimé avec succès', 'success')
+                    })
+                    .catch((err) => {
+                      addToast(err.message || 'Erreur lors de la suppression', 'error')
+                    })
+                }
+              }}
+              disabled={isDeleting}
+              className="px-3 py-1.5 bg-loss/10 text-loss border border-loss/30 rounded-md text-[11.5px] font-medium hover:bg-loss/20 transition-colors disabled:opacity-50"
+            >
+              Supprimer
+            </button>
+          </div>
+        ),
+      }),
+    ]
+  }, [journalType, isDeleting])
 
   console.log('📊 [TradeTable] Rendu :', { 
     isLoading, 
     isError, 
     totalTrades: trades.length, 
     filterPair, 
-    filterResult 
+    filterResult,
+    journalType
   })
 
-  // Affiche une notification d'erreur propre sans bloquer l'application
-  // useEffect(() => {
-  //   if (isError) {
-  //     addToast('Erreur de chargement des trades', 'error')
-  //   }
-  // }, [isError, addToast])
-
-  // Filtrage côté client mémoïsé pour stabiliser la référence
+  // Filtrage côté client mémoïsé pour stabiliser la référence et inclure le type de journal
   const filtered = useMemo(() => {
     return trades.filter((t) => {
+      // Filtrage du journal : on n'affiche que le type correspondant, sauf pour le journal global qui montre tout
+      if (journalType !== 'global' && (t.journal_type || 'global') !== journalType) return false
+
       if (filterPair && t.pair !== filterPair) return false
       if (filterResult && t.result !== filterResult) return false
       return true
     })
-  }, [trades, filterPair, filterResult])
+  }, [trades, filterPair, filterResult, journalType])
 
   const table = useReactTable({
     data: filtered,
