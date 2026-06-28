@@ -25,7 +25,7 @@ export function useTrades() {
             images: step_images (*)
           )
         `)
-        .order('date_backtested', { ascending: false })
+        .order('created_at', { ascending: false })
 
       if (error) throw error
       return data as TradeWithSteps[]

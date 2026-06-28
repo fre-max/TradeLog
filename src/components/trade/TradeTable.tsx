@@ -45,8 +45,8 @@ export function TradeTable() {
   const columns = useMemo(() => {
     // Colonnes communes à toutes les configurations de journal
     const baseCols = [
-      col.accessor('date_backtested', {
-        header: 'Date',
+      col.accessor('created_at', {
+        header: 'Ajouté le',
         cell: (info) => <span className="text-txt2">{formatDate(info.getValue())}</span>,
       }),
       col.accessor('pair', {
