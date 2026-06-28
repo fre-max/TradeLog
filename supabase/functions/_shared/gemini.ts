@@ -45,11 +45,12 @@ function sleep(ms: number): Promise<void> {
 
 async function generateContentWithRetry(
   ai: GoogleGenAI,
-  inlineData: { data: string; mimeType: string }
+  inlineData: { data: string; mimeType: string },
+  prompt: string
 ) {
   const contents = [
     { inlineData },
-    { text: SMC_ANALYSIS_PROMPT }
+    { text: prompt }
   ]
 
   let lastError: unknown
@@ -85,7 +86,8 @@ async function generateContentWithRetry(
  */
 export async function analyserImageUrlAvecGemini(
   ai: GoogleGenAI,
-  imageUrl: string
+  imageUrl: string,
+  prompt: string = SMC_ANALYSIS_PROMPT
 ): Promise<Record<string, unknown>> {
   const imageRes = await fetch(imageUrl)
   if (!imageRes.ok) {
@@ -115,7 +117,7 @@ export async function analyserImageUrlAvecGemini(
   console.log(`🖼️ [Gemini] Image brute téléchargée : ${arrayBuffer.byteLength} octets, Type MIME configuré : ${contentType}`)
   const base64 = arrayBufferToBase64(arrayBuffer)
 
-  const result = await generateContentWithRetry(ai, { data: base64, mimeType: contentType })
+  const result = await generateContentWithRetry(ai, { data: base64, mimeType: contentType }, prompt)
 
   const responseText = result.text
   const jsonMatch = responseText?.match(/\{[\s\S]*\}/)

@@ -59,6 +59,7 @@ Voici comment localiser les informations sur l'image :
    - Si les bougies traversent entièrement la boîte verte et touchent ou dépassent le niveau du Take Profit, le résultat est "win". Le R:R réalisé (rr_realized) est alors égal au Risk/reward ratio planifié.
    - Si les bougies montent ou descendent dans la boîte rouge et touchent le Stop Loss, le résultat est "loss" (le R:R réalisé est de -1).
    - Si le trade est coupé manuellement ou fini à l'équilibre, le résultat est "breakeven" (le R:R réalisé est de 0 ou proche de 0).
+   - Si le prix n'a jamais atteint la ligne d'entrée avant de repartir dans la direction prévue (ordre limite non déclenché), le résultat est "missed" (le R:R réalisé est de 0).
 6. **Date & Heure (Sur l'axe horizontal tout à fait en bas) :**
    - Cherche les étiquettes de couleur (bleues, grises ou sombres) sur l'axe du temps en bas.
    - L'étiquette de gauche correspond à l'entrée/début du trade (date_backtested et entry_time). Convertis le jour (ex: "Thu 02 Apr '26" -> "2026-04-02") et note l'heure (ex: "01:00").
@@ -74,8 +75,8 @@ Retourne UNIQUEMENT ce format JSON, sans aucun texte markdown (pas de \`\`\`json
   "timeframe": "timeframe visible (ex: M15, H4, H1...)",
   "session": "Asian, London, NY ou London/NY selon l'heure d'entrée, ou null",
   "rr": nombre de R:R planifié (ex: 2.64) ou null,
-  "rr_realized": nombre de R:R réellement réalisé (ex: 2.64 si TP, -1 si SL, 0 si BE) ou null,
-  "result": "win", "loss" ou "breakeven" ou null,
+  "rr_realized": nombre de R:R réellement réalisé (ex: 2.64 si TP, -1 si SL, 0 si BE ou missed) ou null,
+  "result": "win", "loss", "breakeven" ou "missed" ou null,
   "date_backtested": "date de début au format AAAA-MM-JJ (ex: 2026-04-02) ou null",
   "entry_time": "heure d'entrée au format HH:MM (ex: 01:00) ou null",
   "exit_time": "heure de sortie au format HH:MM (ex: 09:00) ou null",
@@ -90,4 +91,32 @@ Retourne UNIQUEMENT ce format JSON, sans aucun texte markdown (pas de \`\`\`json
     "entry_time": 0.0 à 1.0,
     "exit_time": 0.0 à 1.0
   }
+}`;
+
+export const SMC_CLOSE_ANALYSIS_PROMPT = `Tu es un assistant IA spécialisé en analyse de graphiques de trading (TradingView, MetaTrader, etc.).
+On te fournit la capture d'écran de FIN d'un trade, ainsi que les paramètres théoriques planifiés au départ :
+- Direction du trade : {direction}
+- Prix d'entrée théorique : {entry_price}
+- Stop Loss (SL) : {sl}
+- Take Profit (TP) : {tp}
+
+Analyse les bougies japonaises (le développement des prix à droite de la ligne d'entrée) et détermine avec précision :
+1. **Déclenchement (Trigger) :** Le prix a-t-il atteint/touché le prix d'entrée théorique ?
+   - Si non, le trade est "missed" (non déclenché). Estime l'écart (en pips/points) entre le niveau le plus proche atteint par le retracement du prix et le prix d'entrée théorique. Indique aussi une raison courte (ex: "A rebondi X pips avant l'entrée").
+   - Si oui, le trade s'est déclenché.
+2. **Dénouement (si déclenché) :**
+   - Le prix a-t-il touché le Take Profit (TP) en premier ? Le résultat est alors "win", et le R:R réalisé est égal au R:R planifié.
+   - Le prix a-t-il touché le Stop Loss (SL) en premier ? Le résultat est alors "loss", et le R:R réalisé est de -1.
+   - Le prix a-t-il oscillé puis a été coupé à l'équilibre ? Le résultat est alors "breakeven", et le R:R réalisé est de 0 ou proche.
+
+Observe attentivement les étiquettes de temps sur l'axe horizontal en bas pour estimer l'heure de sortie si elle est visible.
+
+Retourne UNIQUEMENT ce format JSON, sans aucun texte markdown (pas de \`\`\`json) ou texte d'explication :
+{
+  "triggered": true ou false,
+  "result": "win", "loss", "breakeven" ou "missed",
+  "rr_realized": nombre (ex: 2.5 pour win, -1 pour loss, 0 pour breakeven/missed) ou null,
+  "missed_gap": nombre (écart en pips/points si missed) ou null,
+  "missed_reason": "raison textuelle courte si missed" ou null,
+  "exit_time": "heure de sortie détectée au format HH:MM ou null"
 }`;

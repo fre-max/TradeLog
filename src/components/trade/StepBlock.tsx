@@ -5,6 +5,8 @@ import { CatalogReasonSelector } from '@/components/fields/CatalogReasonSelector
 import type { FormDataState } from '@/lib/tradeForm'
 import { useBrouillonStore } from '@/store/brouillonStore'
 import type { Brouillon } from '@/store/brouillonStore'
+import { ImageField } from '@/components/fields/ImageField'
+import { supabase } from '@/lib/supabase'
 
 type StepType = 'general' | 'biais' | 'poi' | 'entry' | 'result' | 'custom'
 
@@ -17,6 +19,8 @@ interface StepBlockProps {
   defaultOpen?: boolean
   formData: FormDataState
   setFormData: React.Dispatch<React.SetStateAction<FormDataState>>
+  tradeId?: string
+  stepId?: string
 }
 
 /**
@@ -39,6 +43,8 @@ export function StepBlock({
   defaultOpen = false,
   formData,
   setFormData,
+  tradeId,
+  stepId,
 }: StepBlockProps) {
   const [open, setOpen] = useState(defaultOpen)
 
@@ -135,10 +141,10 @@ export function StepBlock({
       {open && (
         <div className="px-5 pb-5 pl-[54px]">
           {type === 'general' && <GeneralFields formData={formData} setFormData={setFormData} />}
-          {type === 'biais' && <BiaisFields formData={formData} setFormData={setFormData} />}
-          {type === 'poi' && <PoiFields formData={formData} setFormData={setFormData} />}
-          {type === 'entry' && <EntryFields formData={formData} setFormData={setFormData} />}
-          {type === 'result' && <ResultFields formData={formData} setFormData={setFormData} />}
+          {type === 'biais' && <BiaisFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
+          {type === 'poi' && <PoiFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
+          {type === 'entry' && <EntryFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
+          {type === 'result' && <ResultFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
         </div>
       )}
     </div>
@@ -291,7 +297,7 @@ function GeneralFields({ formData, setFormData }: { formData: FormDataState; set
 }
 
 // Étape 2 : Analyse du Biais (Direction du biais, Timeframe d'analyse, Raisons)
-function BiaisFields({ formData, setFormData }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>> }) {
+function BiaisFields({ formData, setFormData, tradeId, stepId }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>>; tradeId?: string; stepId?: string }) {
   const updateField = createFieldUpdater(setFormData)
 
   return (
@@ -338,13 +344,19 @@ function BiaisFields({ formData, setFormData }: { formData: FormDataState; setFo
           />
         </Field>
       </div>
-      <ImagePlaceholder label="Chart biais" />
+      <StepImageManager
+        label="Chart biais"
+        images={formData.biais_images}
+        onChange={(imgs) => setFormData((prev) => ({ ...prev, biais_images: imgs }))}
+        tradeId={tradeId}
+        stepId={stepId}
+      />
     </>
   )
 }
 
 // Étape 3 : Point d'intérêt / Zone (Type de zone, Timeframe, Confluences)
-function PoiFields({ formData, setFormData }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>> }) {
+function PoiFields({ formData, setFormData, tradeId, stepId }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>>; tradeId?: string; stepId?: string }) {
   const updateField = createFieldUpdater(setFormData)
 
   return (
@@ -391,13 +403,19 @@ function PoiFields({ formData, setFormData }: { formData: FormDataState; setForm
           />
         </Field>
       </div>
-      <ImagePlaceholder label="Chart POI" />
+      <StepImageManager
+        label="Chart POI"
+        images={formData.poi_images}
+        onChange={(imgs) => setFormData((prev) => ({ ...prev, poi_images: imgs }))}
+        tradeId={tradeId}
+        stepId={stepId}
+      />
     </>
   )
 }
 
 // Étape 4 : Détails d'Entrée sur le marché (SL, TP, Setup, Prix, Trailing, Sortie)
-function EntryFields({ formData, setFormData }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>> }) {
+function EntryFields({ formData, setFormData, tradeId, stepId }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>>; tradeId?: string; stepId?: string }) {
   const updateField = createFieldUpdater(setFormData)
 
   return (
@@ -494,7 +512,7 @@ function EntryFields({ formData, setFormData }: { formData: FormDataState; setFo
               onChange={(val) => updateField('sl_catalog_reasons', val)}
             />
           </Field>
-
+ 
           <Field label="Concepts TP (Catalogue)">
             <CatalogReasonSelector
               contextType="tp"
@@ -503,7 +521,7 @@ function EntryFields({ formData, setFormData }: { formData: FormDataState; setFo
             />
           </Field>
         </div>
-
+ 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           <Field label="Concepts Trailing (Catalogue)">
             <CatalogReasonSelector
@@ -512,7 +530,7 @@ function EntryFields({ formData, setFormData }: { formData: FormDataState; setFo
               onChange={(val) => updateField('trailing_catalog_reasons', val)}
             />
           </Field>
-
+ 
           <Field label="Concepts Entrée (Catalogue)">
             <CatalogReasonSelector
               contextType={['entry', 'confirmation']}
@@ -522,7 +540,7 @@ function EntryFields({ formData, setFormData }: { formData: FormDataState; setFo
           </Field>
         </div>
       </div>
-
+ 
       <div className="mb-3">
         <Field label="Raisons de l'entrée">
           <ComboField
@@ -534,20 +552,77 @@ function EntryFields({ formData, setFormData }: { formData: FormDataState; setFo
           />
         </Field>
       </div>
-      <ImagePlaceholder label="Chart entrée" />
+      <StepImageManager
+        label="Chart entrée"
+        images={formData.entry_images}
+        onChange={(imgs) => setFormData((prev) => ({ ...prev, entry_images: imgs }))}
+        tradeId={tradeId}
+        stepId={stepId}
+      />
     </>
   )
 }
 
 // Étape 5 : Résultat, émotions et revue écrite
-function ResultFields({ formData, setFormData }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>> }) {
+function ResultFields({ formData, setFormData, tradeId, stepId }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>>; tradeId?: string; stepId?: string }) {
   const updateField = createFieldUpdater(setFormData)
+  const [analysantIA, setAnalysantIA] = useState(false)
+
+  // Appelle l'Edge Function pour analyser le dénouement (win, loss, missed) depuis la capture de fin
+  const analyserDenouementAvecIA = async () => {
+    const premiereImage = formData.result_images[0]
+    if (!premiereImage) return
+
+    setAnalysantIA(true)
+    console.log("🚀 [ResultFields] Début de l'analyse IA de clôture...")
+
+    try {
+      const response = await supabase.functions.invoke('analyze', {
+        body: {
+          url: premiereImage.url,
+          mode: 'close',
+          direction: formData.direction,
+          entry_price: formData.entry_price ? parseFloat(formData.entry_price) : null,
+          sl: formData.entry_sl ? parseFloat(formData.entry_sl) : null,
+          tp: formData.entry_tp ? parseFloat(formData.entry_tp) : null,
+        }
+      })
+
+      if (response.error) throw response.error
+
+      const res = response.data
+      console.log('✅ [ResultFields] Analyse IA terminée. Résultat détecté :', res)
+
+      // Mettre à jour les champs du formulaire avec les prédictions de Gemini
+      if (res.result) {
+        updateField('result', res.result)
+      }
+      if (res.rr_realized != null) {
+        updateField('rr_realized', String(res.rr_realized))
+      }
+      if (res.missed_gap != null) {
+        updateField('missed_gap', String(res.missed_gap))
+      }
+      if (res.missed_reason) {
+        updateField('missed_reason', res.missed_reason)
+      }
+      if (res.exit_time) {
+        setFormData((prev) => ({ ...prev, exit_time: res.exit_time }))
+      }
+
+    } catch (err: any) {
+      console.error("❌ [ResultFields] Échec de l'analyse IA :", err)
+      alert(err.message || "Erreur lors de l'analyse par l'IA.")
+    } finally {
+      setAnalysantIA(false)
+    }
+  }
 
   const typeJournal = formData.journal_type || 'global'
 
   // Boutons personnalisés selon le type de journal
   let labelResultat = "Résultat"
-  let buttons = [
+  let buttons: { key: 'win' | 'loss' | 'breakeven' | 'missed'; label: string }[] = [
     { key: 'win' as const, label: '✓ Win' },
     { key: 'loss' as const, label: '✗ Loss' },
     { key: 'breakeven' as const, label: '— Breakeven' },
@@ -567,12 +642,16 @@ function ResultFields({ formData, setFormData }: { formData: FormDataState; setF
       { key: 'loss' as const, label: '✗ Cassé' },
       { key: 'breakeven' as const, label: '— Non atteint' },
     ]
+  } else {
+    // Si c'est global ou confirmation, on propose l'option de trade manqué
+    buttons.push({ key: 'missed' as const, label: '🟡 Missed' })
   }
 
   const colors = {
     win: 'border-win bg-win/10 text-win',
     loss: 'border-loss bg-loss/10 text-loss',
     breakeven: 'border-be bg-be/10 text-be',
+    missed: 'border-[#f5a623] bg-[#f5a623]/10 text-[#f5a623]',
   }
 
   const afficherInfosFinancieres = typeJournal === 'global' || typeJournal === 'confirmation'
@@ -581,14 +660,20 @@ function ResultFields({ formData, setFormData }: { formData: FormDataState; setF
     <>
       <div className="mb-3">
         <label className="text-txt3 text-[11px] font-medium uppercase tracking-wider block mb-1.5">{labelResultat}</label>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {buttons.map(({ key, label }) => (
             <button
               key={key}
               type="button"
-              onClick={() => updateField('result', key)}
+              onClick={() => {
+                updateField('result', key)
+                // Si c'est missed, le R:R réalisé est de 0
+                if (key === 'missed') {
+                  updateField('rr_realized', '0')
+                }
+              }}
               className={cn(
-                'flex-1 py-2 rounded-md border-[1.5px] text-[12.5px] font-medium transition-all',
+                'flex-1 py-2 rounded-md border-[1.5px] text-[12.5px] font-medium transition-all min-w-[80px]',
                 formData.result === key ? colors[key] : 'border-border2 bg-bg text-txt3'
               )}
             >
@@ -598,7 +683,7 @@ function ResultFields({ formData, setFormData }: { formData: FormDataState; setF
         </div>
       </div>
       
-      {afficherInfosFinancieres && (
+      {afficherInfosFinancieres && formData.result !== 'missed' && (
         <FieldGrid>
           <Field label="R:R réalisé">
             <Input
@@ -623,7 +708,30 @@ function ResultFields({ formData, setFormData }: { formData: FormDataState; setF
         </FieldGrid>
       )}
 
-      <div className="flex flex-col gap-3">
+      {/* Champs affichés spécifiquement si l'ordre a été manqué / non déclenché */}
+      {afficherInfosFinancieres && formData.result === 'missed' && (
+        <FieldGrid>
+          <Field label="Écart de déclenchement (Pips)">
+            <Input
+              type="number"
+              step="0.1"
+              placeholder="ex: 2.5"
+              value={formData.missed_gap}
+              onChange={(e) => updateField('missed_gap', e.target.value)}
+            />
+          </Field>
+          <Field label="Raison du manquement">
+            <Input
+              type="text"
+              placeholder="ex: OB non atteint de peu"
+              value={formData.missed_reason}
+              onChange={(e) => updateField('missed_reason', e.target.value)}
+            />
+          </Field>
+        </FieldGrid>
+      )}
+
+      <div className="flex flex-col gap-3 mb-3">
         <Field label="Ce que j'ai bien fait">
           <Textarea
             placeholder="..."
@@ -639,21 +747,93 @@ function ResultFields({ formData, setFormData }: { formData: FormDataState; setF
           />
         </Field>
       </div>
+
+      <StepImageManager
+        label="Chart Résultat (Fin du trade)"
+        images={formData.result_images}
+        onChange={(imgs) => setFormData((prev) => ({ ...prev, result_images: imgs }))}
+        tradeId={tradeId}
+        stepId={stepId}
+      />
+
+      {formData.result_images && formData.result_images.length > 0 && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={analyserDenouementAvecIA}
+            disabled={analysantIA}
+            className="w-full py-2 bg-[#7c3aed]/10 text-[#7c3aed] border border-[#7c3aed]/25 hover:bg-[#7c3aed]/15 rounded-md text-[12.5px] font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+          >
+            {analysantIA ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-[#7c3aed]/20 border-t-[#7c3aed] rounded-full animate-spin" />
+                <span>Analyse du dénouement par Gemini...</span>
+              </>
+            ) : (
+              <>
+                <span>🧠</span>
+                <span>Analyser la capture de fin par l'IA</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </>
   )
 }
 
-function ImagePlaceholder({ label }: { label: string }) {
+interface StepImageManagerProps {
+  label: string
+  images: { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[]
+  onChange: (images: { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[]) => void
+  tradeId?: string
+  stepId?: string
+}
+
+function StepImageManager({
+  label,
+  images,
+  onChange,
+  tradeId,
+  stepId,
+}: StepImageManagerProps) {
   return (
-    <Field label={label}>
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-accent/5 border border-accent/15 rounded-md text-[12px] text-txt3">
-        <span>📱</span>
-        <span>Récupérer depuis Telegram Bot</span>
-        <span className="ml-auto text-accent text-[11px] cursor-pointer hover:underline">→ Configurer</span>
-      </div>
-      <div className="mt-1 border-2 border-dashed border-border2 rounded-md py-4 text-center text-txt3 text-[12px] cursor-pointer hover:border-accent hover:text-accent transition-colors">
-        🖼 Glisser ou coller une image
-      </div>
-    </Field>
+    <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-border/40">
+      <label className="text-txt3 text-[11px] font-semibold uppercase tracking-wider">{label}</label>
+      
+      {/* Liste des images existantes pour cette étape */}
+      {images && images.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-2">
+          {images.map((img) => (
+            <div
+              key={img.id}
+              className="relative w-28 h-20 bg-bg border border-border2 rounded-md overflow-hidden group flex-shrink-0"
+            >
+              <img src={img.url} alt="Chart thumbnail" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => onChange(images.filter((i) => i.id !== img.id))}
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-semibold transition-opacity"
+              >
+                Supprimer
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Composant de téléversement d'image réel */}
+      {tradeId && stepId ? (
+        <ImageField
+          tradeId={tradeId}
+          stepId={stepId}
+          onUpload={(publicUrl) => {
+            onChange([...images, { id: crypto.randomUUID(), url: publicUrl, source: 'upload' }])
+          }}
+        />
+      ) : (
+        <p className="text-txt3 text-[11px] italic">Identifiants manquants pour téléverser une image.</p>
+      )}
+    </div>
   )
 }

@@ -11,7 +11,7 @@ create table trades (
   date_backtested date not null,
   entry_time      time,
   exit_time       time,
-  result          text check (result in ('win','loss','breakeven')),
+  result          text check (result in ('win','loss','breakeven','missed')),
   rr_planned      numeric(5,2),
   rr_realized     numeric(5,2),
   exit_type       text check (exit_type in ('tp','sl','breakeven','trailing','manual')),

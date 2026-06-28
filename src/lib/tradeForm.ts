@@ -10,7 +10,7 @@ export const INITIAL_FORM_STATE = {
   direction: 'long' as 'long' | 'short',
   rr_planned: '',
   rr_realized: '',
-  result: 'win' as 'win' | 'loss' | 'breakeven' | null,
+  result: 'win' as 'win' | 'loss' | 'breakeven' | 'missed' | null,
   exit_type: 'tp' as 'tp' | 'sl' | 'breakeven' | 'trailing' | 'manual',
   emotion: '',
   journal_type: 'global' as 'global' | 'bias' | 'poi' | 'confirmation',
@@ -33,6 +33,16 @@ export const INITIAL_FORM_STATE = {
 
   review_good: '',
   review_bad: '',
+  
+  // Champs spécifiques aux missed trades (ordres non déclenchés)
+  missed_gap: '',
+  missed_reason: '',
+
+  // Listes d'images associées à chaque étape du formulaire
+  biais_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
+  poi_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
+  entry_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
+  result_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
 
   // Raisons techniques issues du catalogue (liées aux étapes)
   biais_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
@@ -107,6 +117,16 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
 
     review_good: str(reviewFields.good),
     review_bad: str(reviewFields.bad ?? reviewFields.improve),
+
+    // Champs spécifiques aux missed trades
+    missed_gap: numStr(reviewFields.missed_gap),
+    missed_reason: str(reviewFields.missed_reason),
+
+    // Listes d'images par étape
+    biais_images: biais?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
+    poi_images: poi?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
+    entry_images: entry?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
+    result_images: review?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
 
     // Extractions des raisons du catalogue depuis les JSONB des étapes
     biais_catalog_reasons: ((biaisFields.catalog_reasons ?? []) as any[]).map(r => ({
@@ -242,6 +262,8 @@ export function buildStepPayloads(
       fields: {
         good: formData.review_good,
         bad: formData.review_bad,
+        missed_gap: formData.result === 'missed' && formData.missed_gap ? parseFloat(formData.missed_gap) : null,
+        missed_reason: formData.result === 'missed' ? formData.missed_reason : null,
       },
     },
   ]

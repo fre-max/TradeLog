@@ -39,7 +39,14 @@ export function TradeDrawer() {
   const [saving, setSaving] = useState(false)
   const [manualMode, setManualMode] = useState(false)
 
-  // On récupère le type de journal depuis les paramètres d'URL ( bias, poi, confirmation, global )
+  // UUIDs générés côté client pour l'insertion des nouveaux trades et de leurs étapes
+  const [tempIds, setTempIds] = useState(() => ({
+    tradeId: crypto.randomUUID(),
+    biais: crypto.randomUUID(),
+    poi: crypto.randomUUID(),
+    entry: crypto.randomUUID(),
+    result: crypto.randomUUID(),
+  }))
   const { type } = useParams<{ type: string }>()
   const currentJournalType = (type || 'global') as 'global' | 'bias' | 'poi' | 'confirmation'
 
@@ -110,6 +117,13 @@ export function TradeDrawer() {
   const resetAndClose = () => {
     setFormData(INITIAL_FORM_STATE)
     setStepIds({})
+    setTempIds({
+      tradeId: crypto.randomUUID(),
+      biais: crypto.randomUUID(),
+      poi: crypto.randomUUID(),
+      entry: crypto.randomUUID(),
+      result: crypto.randomUUID(),
+    })
     closeNewTrade()
   }
 
@@ -142,10 +156,12 @@ export function TradeDrawer() {
 
       const status = computeTradeStatus(formData, 'in_progress')
       const tradeData = {
+        id: tempIds.tradeId,
         user_id: user.id,
         ...buildTradePayload(formData, status),
       }
 
+      console.log('📡 [TradeDrawer] Insertion du nouveau trade en BDD (ID forcé) :', tempIds.tradeId)
       const { data: insertedTrade, error: tradeInsertError } = await supabase
         .from('trades')
         .insert(tradeData)
@@ -156,10 +172,38 @@ export function TradeDrawer() {
         throw tradeInsertError || new Error("Erreur lors de la création du trade")
       }
 
-      const stepsToInsert = buildStepPayloads(insertedTrade.id, formData, {}).map(({ id: _id, ...step }) => step)
+      console.log('📡 [TradeDrawer] Construction et insertion des étapes avec IDs forcés')
+      const stepsToInsert = buildStepPayloads(tempIds.tradeId, formData, {
+        biais: tempIds.biais,
+        poi: tempIds.poi,
+        entry: tempIds.entry,
+        result: tempIds.result,
+      })
 
       const { error: stepsInsertError } = await supabase.from('steps').insert(stepsToInsert)
       if (stepsInsertError) throw stepsInsertError
+
+      // Insertion des images pour chaque étape
+      const stepsTypes = ['biais', 'poi', 'entry', 'result'] as const
+      for (const type of stepsTypes) {
+        const stepId = tempIds[type]
+        const imagesKey = `${type}_images` as const
+        const imagesForm = formData[imagesKey] || []
+        
+        if (imagesForm.length > 0) {
+          console.log(`📡 [TradeDrawer] Insertion de ${imagesForm.length} images pour l'étape ${type}`)
+          const { error: imgErr } = await supabase
+            .from('step_images')
+            .insert(
+              imagesForm.map((img) => ({
+                step_id: stepId,
+                url: img.url,
+                source: img.source || 'upload',
+              }))
+            )
+          if (imgErr) throw imgErr
+        }
+      }
 
       await queryClient.invalidateQueries({ queryKey: ['trades'] })
       addToast('Le trade a été enregistré avec succès !', 'success')
@@ -228,8 +272,17 @@ export function TradeDrawer() {
               }}
               onManualMode={() => setManualMode(true)}
             />
-          ) : (
-            stepsAffichees.map((step, index) => (
+          ) : (() => {
+            const tradeIdActuel = isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId
+            const getStepId = (type: string) => {
+              if (type === 'general') return ''
+              if (isEditMode) {
+                return (stepIds as any)[type] || (tempIds as any)[type]
+              }
+              return (tempIds as any)[type]
+            }
+
+            return stepsAffichees.map((step, index) => (
               <StepBlock
                 key={step.id}
                 number={index + 1}
@@ -238,9 +291,11 @@ export function TradeDrawer() {
                 defaultOpen={index === 0}
                 formData={formData}
                 setFormData={setFormData}
+                tradeId={tradeIdActuel}
+                stepId={getStepId(step.type)}
               />
             ))
-          )}
+          })()}
         </div>
 
         {(isEditMode || manualMode) && (

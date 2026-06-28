@@ -133,7 +133,13 @@ export function TradeDetail() {
             </Tag>
             {selectedTrade.result && (
               <Tag variant={selectedTrade.result}>
-                {selectedTrade.result === 'win' ? '✓ Win' : selectedTrade.result === 'loss' ? '✗ Loss' : '— BE'}
+                {selectedTrade.result === 'win' 
+                  ? '✓ Win' 
+                  : selectedTrade.result === 'loss' 
+                    ? '✗ Loss' 
+                    : selectedTrade.result === 'breakeven' 
+                      ? '— BE' 
+                      : '🟡 Missed'}
               </Tag>
             )}
             {selectedTrade.session && <Tag>{selectedTrade.session}</Tag>}
@@ -265,8 +271,37 @@ export function TradeDetail() {
             {review && (
               <Section title="📝 Review" badge={selectedTrade.emotion ?? undefined}>
                 <div className="flex flex-col gap-3">
+                  {selectedTrade.result === 'missed' && (
+                    <div className="bg-[#f5a623]/10 border border-[#f5a623]/25 rounded-md p-3 mb-1">
+                      <div className="text-[10px] font-bold text-[#f5a623] uppercase tracking-wider mb-2">
+                        🟡 Détails de l'ordre non déclenché
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-[13px]">
+                        <div>
+                          <span className="text-txt3 block text-[10px] uppercase tracking-wider mb-0.5">Écart</span>
+                          <span className="font-semibold text-txt">
+                            {(review.fields as any)?.missed_gap != null ? `${(review.fields as any).missed_gap} pips` : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-txt3 block text-[10px] uppercase tracking-wider mb-0.5">Raison</span>
+                          <span className="font-medium text-txt">
+                            {(review.fields as any)?.missed_reason || '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <ReviewCard icon="✅" label="Ce qui a bien marché" text={(review.fields as Record<string, string>)?.good ?? '—'} />
                   <ReviewCard icon="⚠️" label="À améliorer" text={(review.fields as Record<string, string>)?.bad ?? (review.fields as Record<string, string>)?.improve ?? '—'} />
+                  
+                  {/* Images de fin de trade / résultat */}
+                  {review.images && review.images.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-txt3 text-[10px] font-semibold uppercase tracking-wider mb-2">🖼 Graphique de fin / Résultat</p>
+                      <Thumbnails images={review.images} onOpen={setLightbox} />
+                    </div>
+                  )}
                 </div>
               </Section>
             )}
@@ -335,7 +370,7 @@ function Info({ label, value, highlight }: { label: string; value: string; highl
   )
 }
 
-type TagVariant = 'long' | 'short' | 'win' | 'loss' | 'breakeven' | 'default'
+type TagVariant = 'long' | 'short' | 'win' | 'loss' | 'breakeven' | 'missed' | 'default'
 
 function Tag({ variant = 'default', children }: { variant?: TagVariant; children: React.ReactNode }) {
   const styles: Record<TagVariant, string> = {
@@ -344,6 +379,7 @@ function Tag({ variant = 'default', children }: { variant?: TagVariant; children
     win: 'bg-win/10 text-win',
     loss: 'bg-loss/10 text-loss',
     breakeven: 'bg-be/10 text-be',
+    missed: 'bg-[#f5a623]/10 text-[#f5a623]',
     default: 'bg-surface2 text-txt2',
   }
   return (

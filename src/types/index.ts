@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const PairEnum = z.enum(['XAUUSD','EURUSD','GBPUSD','NAS100','US30','BTCUSD'])
 export const DirectionEnum = z.enum(['long','short'])
 export const SessionEnum = z.enum(['Asian','London','NY','London/NY'])
-export const ResultEnum = z.enum(['win','loss','breakeven'])
+export const ResultEnum = z.enum(['win','loss','breakeven','missed'])
 export const ExitTypeEnum = z.enum(['tp','sl','breakeven','trailing','manual'])
 export const StepTypeEnum = z.enum(['biais','poi','entry','result','custom','news'])
 export const ImageSourceEnum = z.enum(['telegram','upload','url'])
