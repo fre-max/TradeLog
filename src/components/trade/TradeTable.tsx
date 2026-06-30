@@ -89,7 +89,7 @@ export function TradeTable() {
           cell: (info) => {
             const v = info.getValue()
             if (!v) return <span className="text-txt3">—</span>
-            return <Badge variant={v}>{v === 'win' ? '✓ Oui' : v === 'loss' ? '✗ Non' : '— BE'}</Badge>
+            return <Badge variant={v}>{v === 'win' ? '✓ Oui' : v === 'loss' ? '✗ Non' : v === 'missed' ? '∅ Manqué' : '— BE'}</Badge>
           },
         }),
         col.accessor('status', {
@@ -145,7 +145,7 @@ export function TradeTable() {
           cell: (info) => {
             const v = info.getValue()
             if (!v) return <span className="text-txt3">—</span>
-            return <Badge variant={v}>{v === 'win' ? '✓ Réagi' : v === 'loss' ? '✗ Cassé' : '— BE'}</Badge>
+            return <Badge variant={v}>{v === 'win' ? '✓ Réagi' : v === 'loss' ? '✗ Cassé' : v === 'missed' ? '∅ Manqué' : '— BE'}</Badge>
           },
         }),
         col.accessor('status', {
@@ -201,7 +201,7 @@ export function TradeTable() {
           cell: (info) => {
             const v = info.getValue()
             if (!v) return <span className="text-txt3">—</span>
-            return <Badge variant={v}>{v === 'win' ? '✓ Win' : v === 'loss' ? '✗ Loss' : '— BE'}</Badge>
+            return <Badge variant={v}>{v === 'win' ? '✓ Win' : v === 'loss' ? '✗ Loss' : v === 'missed' ? '∅ Missed' : '— BE'}</Badge>
           },
         }),
         col.accessor('emotion', {
@@ -258,7 +258,7 @@ export function TradeTable() {
         cell: (info) => {
           const v = info.getValue()
           if (!v) return <span className="text-txt3">—</span>
-          return <Badge variant={v}>{v === 'win' ? '✓ Win' : v === 'loss' ? '✗ Loss' : '— BE'}</Badge>
+          return <Badge variant={v}>{v === 'win' ? '✓ Win' : v === 'loss' ? '✗ Loss' : v === 'missed' ? '∅ Missed' : '— BE'}</Badge>
         },
       }),
       col.accessor('status', {
@@ -454,13 +454,14 @@ export function TradeTable() {
 
 // ─── Badge ────────────────────────────────────────────────
 
-type BadgeVariant = 'win' | 'loss' | 'breakeven' | 'long' | 'short'
+type BadgeVariant = 'win' | 'loss' | 'breakeven' | 'missed' | 'long' | 'short'
 
 function Badge({ variant, children }: { variant: BadgeVariant; children: React.ReactNode }) {
   const styles: Record<BadgeVariant, string> = {
     win: 'bg-win/10 text-win',
     loss: 'bg-loss/10 text-loss',
     breakeven: 'bg-be/10 text-be',
+    missed: 'bg-txt3/10 text-txt3',
     long: 'bg-accent/10 text-accent',
     short: 'bg-[#f08a4f]/10 text-[#f08a4f]',
   }
