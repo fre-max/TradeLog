@@ -20,17 +20,15 @@ export default function Settings() {
 
   trades.forEach(trade => {
     totalSteps += trade.steps?.length || 0
-    trade.steps?.forEach(step => {
-      step.images?.forEach(img => {
-        // Les images issues d'upload direct ou de Telegram sont stockées dans le bucket Supabase
-        if (img.source === 'upload' || img.source === 'telegram') {
-          totalImagesStockees++
-        }
-        // Chaque image Telegram correspond à un appel à l'API Gemini Vision
-        if (img.source === 'telegram') {
-          totalAnalysesGemini++
-        }
-      })
+    trade.images?.forEach(img => {
+      // Les images issues d'upload direct ou de Telegram sont stockées dans le bucket Supabase
+      if (img.source === 'upload' || img.source === 'telegram') {
+        totalImagesStockees++
+      }
+      // Chaque image Telegram correspond à un appel à l'API Gemini Vision
+      if (img.source === 'telegram') {
+        totalAnalysesGemini++
+      }
     })
   })
 

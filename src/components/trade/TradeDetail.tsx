@@ -40,6 +40,10 @@ export function TradeDetail() {
   const review = selectedTrade.steps.find((s) => s.type === 'result')
   const news = selectedTrade.steps.find((s) => s.type === 'news')
 
+  // Images du trade par phase
+  const avantImages = selectedTrade.images?.filter(img => img.phase === 'avant') || []
+  const apresImages = selectedTrade.images?.filter(img => img.phase === 'apres') || []
+
   // Extraire les données Gemini si le trade est un Quick Entry
   // Les données sont stockées dans fields.extracted de l'étape 'biais'
   const isQuickEntry = selectedTrade.status === 'quick'
@@ -241,7 +245,7 @@ export function TradeDetail() {
             {biais && (
               <Section title="🧭 Biais" badge={biais.timeframe ?? undefined}>
                 <p className="text-txt2 text-[13.5px] leading-relaxed mb-3">{biais.notes ?? '—'}</p>
-                <Thumbnails images={biais.images} onOpen={setLightbox} />
+                {avantImages.length > 0 && <Thumbnails images={avantImages} onOpen={setLightbox} />}
               </Section>
             )}
 
@@ -249,7 +253,6 @@ export function TradeDetail() {
             {poi && (
               <Section title="🎯 POI / Zone" badge={poi.timeframe ?? undefined}>
                 <p className="text-txt2 text-[13.5px] leading-relaxed mb-3">{poi.notes ?? '—'}</p>
-                <Thumbnails images={poi.images} onOpen={setLightbox} />
               </Section>
             )}
 
@@ -263,7 +266,6 @@ export function TradeDetail() {
                   <Info label="Take Profit" value={(entry.fields as any)?.tp != null ? String((entry.fields as any).tp) : '—'} />
                 </div>
                 <p className="text-txt2 text-[13.5px] leading-relaxed mb-3">{entry.notes ?? '—'}</p>
-                <Thumbnails images={entry.images} onOpen={setLightbox} />
               </Section>
             )}
 
@@ -296,10 +298,10 @@ export function TradeDetail() {
                   <ReviewCard icon="⚠️" label="À améliorer" text={(review.fields as Record<string, string>)?.bad ?? (review.fields as Record<string, string>)?.improve ?? '—'} />
                   
                   {/* Images de fin de trade / résultat */}
-                  {review.images && review.images.length > 0 && (
+                  {apresImages.length > 0 && (
                     <div className="mt-3">
                       <p className="text-txt3 text-[10px] font-semibold uppercase tracking-wider mb-2">🖼 Graphique de fin / Résultat</p>
-                      <Thumbnails images={review.images} onOpen={setLightbox} />
+                      <Thumbnails images={apresImages} onOpen={setLightbox} />
                     </div>
                   )}
                 </div>

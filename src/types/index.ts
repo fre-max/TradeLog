@@ -120,7 +120,7 @@ export const ReasonFamilySchema = z.object({
 })
 
 export type ReasonFamily = z.infer<typeof ReasonFamilySchema>
-export type ReasonFamilyInsert = Omit<ReasonFamily, 'id' | 'created_at'>
+export type ReasonFamilyInsert = Omit<ReasonFamily, 'id' | 'created_at' | 'user_id' | 'order'> & { user_id?: string, order?: number }
 
 // Schéma et type pour une variante de raison (ex: mineur, moyen, grand)
 export const ReasonVariantSchema = z.object({
@@ -147,6 +147,9 @@ export const ReasonCatalogSchema = z.object({
 
 export type ReasonCatalogItem = z.infer<typeof ReasonCatalogSchema> & {
   variants: ReasonVariant[]
+  type?: string // Temporairement pour compatibilité
 }
 export type ReasonCatalogInsert = Omit<z.infer<typeof ReasonCatalogSchema>, 'id' | 'user_id' | 'created_at'>
+
+export type ReasonType = 'biais' | 'poi' | 'entry' | 'sl' | 'tp' | 'trailing' | 'confirmation'
 

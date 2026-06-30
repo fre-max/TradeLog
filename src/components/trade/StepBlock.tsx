@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ComboField } from '@/components/fields/ComboField'
-import { CatalogReasonSelector } from '@/components/fields/CatalogReasonSelector'
 import type { FormDataState } from '@/lib/tradeForm'
 import { useBrouillonStore } from '@/store/brouillonStore'
 import type { Brouillon } from '@/store/brouillonStore'
@@ -9,6 +8,7 @@ import { ImageField } from '@/components/fields/ImageField'
 import { supabase } from '@/lib/supabase'
 import { useStrategies } from '@/hooks/useStrategies'
 import { TradeReasonsAccordions } from './TradeReasonsAccordions'
+import type { SelectedTradeReason } from '@/hooks/useTradeReasons'
 
 type StepType = 'general' | 'biais' | 'poi' | 'entry' | 'result' | 'custom' | 'reasons'
 
@@ -21,8 +21,12 @@ interface StepBlockProps {
   setFormData: React.Dispatch<React.SetStateAction<FormDataState>>
   tradeId?: string
   stepId?: string
+  // IDs simples pour la compatibilité (calculé à partir de selectedReasons)
   selectedReasonIds?: string[]
   setSelectedReasonIds?: React.Dispatch<React.SetStateAction<string[]>>
+  // Objets complets avec variantes
+  selectedReasons?: SelectedTradeReason[]
+  setSelectedReasons?: React.Dispatch<React.SetStateAction<SelectedTradeReason[]>>
   tradeImages?: any[]
 }
 
@@ -50,6 +54,8 @@ export function StepBlock({
   stepId,
   selectedReasonIds = [],
   setSelectedReasonIds,
+  selectedReasons = [],
+  setSelectedReasons,
   tradeImages = [],
 }: StepBlockProps) {
   const [open, setOpen] = useState(defaultOpen)
@@ -150,7 +156,17 @@ export function StepBlock({
           {type === 'biais' && <BiaisFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
           {type === 'poi' && <PoiFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
           {type === 'entry' && <EntryFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
-          {type === 'reasons' && setSelectedReasonIds && <TradeReasonsAccordions selectedReasonIds={selectedReasonIds} onChange={setSelectedReasonIds} />}
+          {type === 'reasons' && setSelectedReasons && (
+            <TradeReasonsAccordions
+              selectedReasonIds={selectedReasonIds}
+              onChange={(ids) => {
+                // Pour la compatibilité, on met à jour aussi les IDs simples
+                setSelectedReasonIds?.(ids)
+              }}
+              selectedReasons={selectedReasons}
+              onChangeReasons={setSelectedReasons}
+            />
+          )}
           {type === 'result' && <ResultFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} tradeImages={tradeImages} />}
         </div>
       )}
@@ -413,15 +429,6 @@ function BiaisFields({ formData, setFormData, tradeId, stepId }: { formData: For
           />
         </Field>
       </div>
-      <div className="mb-3">
-        <Field label="Concepts du Catalogue (Biais)">
-          <CatalogReasonSelector
-            contextType={['biais', 'confirmation']}
-            value={formData.biais_catalog_reasons}
-            onChange={(val) => updateField('biais_catalog_reasons', val)}
-          />
-        </Field>
-      </div>
     </>
   )
 }
@@ -462,15 +469,6 @@ function PoiFields({ formData, setFormData, tradeId, stepId }: { formData: FormD
             presets={['OB aligné avec 50% du dernier swing','FVG en dessous comme support','Zone premium / discount']}
             value={formData.poi_confluences}
             onChange={(val) => updateField('poi_confluences', val)}
-          />
-        </Field>
-      </div>
-      <div className="mb-3">
-        <Field label="Concepts du Catalogue (POI)">
-          <CatalogReasonSelector
-            contextType="poi"
-            value={formData.poi_catalog_reasons}
-            onChange={(val) => updateField('poi_catalog_reasons', val)}
           />
         </Field>
       </div>
@@ -565,46 +563,6 @@ function EntryFields({ formData, setFormData, tradeId, stepId }: { formData: For
           </Select>
         </Field>
       </FieldGrid>
-      <div className="mb-4 pt-3 border-t border-border/40 space-y-3">
-        <p className="text-[11px] font-semibold text-txt2 uppercase tracking-wider">Concepts du Catalogue Technique</p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          <Field label="Concepts SL (Catalogue)">
-            <CatalogReasonSelector
-              contextType="sl"
-              value={formData.sl_catalog_reasons}
-              onChange={(val) => updateField('sl_catalog_reasons', val)}
-            />
-          </Field>
- 
-          <Field label="Concepts TP (Catalogue)">
-            <CatalogReasonSelector
-              contextType="tp"
-              value={formData.tp_catalog_reasons}
-              onChange={(val) => updateField('tp_catalog_reasons', val)}
-            />
-          </Field>
-        </div>
- 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          <Field label="Concepts Trailing (Catalogue)">
-            <CatalogReasonSelector
-              contextType="trailing"
-              value={formData.trailing_catalog_reasons}
-              onChange={(val) => updateField('trailing_catalog_reasons', val)}
-            />
-          </Field>
- 
-          <Field label="Concepts Entrée (Catalogue)">
-            <CatalogReasonSelector
-              contextType={['entry', 'confirmation']}
-              value={formData.entry_catalog_reasons}
-              onChange={(val) => updateField('entry_catalog_reasons', val)}
-            />
-          </Field>
-        </div>
-      </div>
- 
       <div className="mb-3">
         <Field label="Raisons de l'entrée">
           <ComboField
