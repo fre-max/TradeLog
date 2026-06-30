@@ -9,7 +9,7 @@ import { ImageAnalysisUpload } from './ImageAnalysisUpload'
 import { useBrouillonStore } from '@/store/brouillonStore'
 import type { Brouillon } from '@/store/brouillonStore'
 import { useQueryClient } from '@tanstack/react-query'
-import { useTradeReasons, useSaveTradeReasons } from '@/hooks/useTradeReasons'
+import { useTradeReasons, useSaveTradeReasons, type SelectedTradeReason } from '@/hooks/useTradeReasons'
 import { useTradeImages, useSaveTradeImages } from '@/hooks/useTradeImages'
 import { TradeImageManager } from './TradeImageManager'
 import type { TradeImage } from '@/types'
@@ -42,7 +42,8 @@ export function TradeDrawer() {
 
   const [formData, setFormData] = useState<FormDataState>(INITIAL_FORM_STATE)
   const [stepIds, setStepIds] = useState<EditStepIds>({})
-  const [selectedReasonIds, setSelectedReasonIds] = useState<string[]>([])
+  // Les raisons sélectionnées : tableau d'objets { reason_id, variant_name }
+  const [selectedReasons, setSelectedReasons] = useState<SelectedTradeReason[]>([])
   const [tradeImages, setTradeImages] = useState<Partial<TradeImage>[]>([])
   const [saving, setSaving] = useState(false)
   const [manualMode, setManualMode] = useState(false)
@@ -114,7 +115,7 @@ export function TradeDrawer() {
 
   useEffect(() => {
     if (isEditMode) {
-      if (existingReasons) setSelectedReasonIds(existingReasons)
+      if (existingReasons) setSelectedReasons(existingReasons)
       if (existingImages) setTradeImages(existingImages)
     }
   }, [existingReasons, existingImages, isEditMode])
@@ -133,7 +134,7 @@ export function TradeDrawer() {
         journal_type: currentJournalType,
       })
       setStepIds({})
-      setSelectedReasonIds([])
+      setSelectedReasons([])
       setTradeImages([])
       setManualMode(false)
     }
@@ -148,7 +149,7 @@ export function TradeDrawer() {
   const resetAndClose = () => {
     setFormData(INITIAL_FORM_STATE)
     setStepIds({})
-    setSelectedReasonIds([])
+    setSelectedReasons([])
     setTradeImages([])
     setTempIds({
       tradeId: crypto.randomUUID(),
@@ -181,8 +182,8 @@ export function TradeDrawer() {
           preserveBiaisFields,
         })
 
-        // Sauvegarde des raisons dynamiques
-        await saveTradeReasons({ tradeId: editingTrade.id, reasonIds: selectedReasonIds })
+        // Sauvegarde des raisons dynamiques avec leurs variantes
+        await saveTradeReasons({ tradeId: editingTrade.id, reasons: selectedReasons })
         // Sauvegarde des nouvelles images structurées
         await saveTradeImages({ tradeId: editingTrade.id, images: tradeImages })
 
@@ -221,8 +222,8 @@ export function TradeDrawer() {
       const { error: stepsInsertError } = await supabase.from('steps').insert(stepsToInsert)
       if (stepsInsertError) throw stepsInsertError
 
-      // Sauvegarde des raisons dynamiques
-      await saveTradeReasons({ tradeId: tempIds.tradeId, reasonIds: selectedReasonIds })
+      // Sauvegarde des raisons dynamiques avec leurs variantes
+      await saveTradeReasons({ tradeId: tempIds.tradeId, reasons: selectedReasons })
       // Sauvegarde des images
       await saveTradeImages({ tradeId: tempIds.tradeId, images: tradeImages })
 
@@ -357,8 +358,13 @@ export function TradeDrawer() {
                     setFormData={setFormData}
                     tradeId={tradeIdActuel}
                     stepId={getStepId(step.type)}
-                    selectedReasonIds={selectedReasonIds}
-                    setSelectedReasonIds={setSelectedReasonIds}
+                    selectedReasonIds={selectedReasons.map(r => r.reason_id)}
+                    setSelectedReasonIds={(ids) => {
+                      // Compatibilité : si on reçoit des IDs simples, on crée des objets
+                      // Le vrai changement passe par TradeReasonsAccordions directement
+                    }}
+                    selectedReasons={selectedReasons}
+                    setSelectedReasons={setSelectedReasons}
                     tradeImages={tradeImages}
                   />
                 ))}

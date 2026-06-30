@@ -60,9 +60,13 @@ export function exportCsv(trades: TradeWithSteps[]) {
     const reviewFields = (review?.fields ?? {}) as Record<string, unknown>
 
     // Récupère la première image de chaque section (URL ou storage_path)
-    const imageUrlBiais  = biais?.images?.[0]?.url ?? biais?.images?.[0]?.storage_path ?? ''
-    const imageUrlPoi    = poi?.images?.[0]?.url   ?? poi?.images?.[0]?.storage_path   ?? ''
-    const imageUrlEntry  = entry?.images?.[0]?.url ?? entry?.images?.[0]?.storage_path ?? ''
+    const getImgUrl = (phase: string, context: string) => {
+      const img = trade.images?.find(i => i.phase === phase && i.context === context)
+      return img?.url ?? img?.storage_path ?? ''
+    }
+    const imageUrlBiais  = getImgUrl('avant', 'superieur') || getImgUrl('avant', 'global')
+    const imageUrlPoi    = getImgUrl('avant', 'intermediaire')
+    const imageUrlEntry  = getImgUrl('avant', 'inferieur')
 
     // Construit la ligne dans l'ordre des entêtes
     return [

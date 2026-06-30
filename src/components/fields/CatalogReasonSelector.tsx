@@ -53,7 +53,7 @@ export function CatalogReasonSelector({
 
   // Filtrer les concepts techniques selon le contexte demandé
   const typesCibles = Array.isArray(contextType) ? contextType : [contextType]
-  const optionsDisponibles = catalogItems.filter((item) => typesCibles.includes(item.type))
+  const optionsDisponibles = catalogItems.filter((item) => item.type && typesCibles.includes(item.type as ReasonType))
 
   // Supprime un concept associé
   const handleRemove = (reasonId: string, variantName: string) => {

@@ -107,7 +107,7 @@ export default function Stats() {
         const exist = statsMap.get(cle) ?? {
           title: catalogItem.title,
           variant: r.variant_name,
-          type: catalogItem.type,
+          type: catalogItem.type || '',
           count: 0,
           wins: 0,
           losses: 0,
