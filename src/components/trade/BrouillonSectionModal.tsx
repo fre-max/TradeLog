@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { useBrouillonStore } from '@/store/brouillonStore'
 import type { SectionType, BrouillonBiais, BrouillonPoi, BrouillonEntry, BrouillonResult } from '@/store/brouillonStore'
 import { ComboField } from '@/components/fields/ComboField'
-import { BrouillonImagePicker } from './BrouillonImagePicker'
+import { TradeImageManager } from './TradeImageManager'
 import { cn } from '@/lib/utils'
+import type { TradeImage } from '@/types'
 
 // Labels affichés dans le sélecteur de section
 const SECTIONS_LABELS: Record<SectionType, string> = {
+  images: '🖼️ Images',
   biais: '📊 Biais',
   poi: '📍 POI / Zone',
   entry: '🎯 Entrée',
@@ -31,7 +33,6 @@ export function BrouillonSectionModal() {
     biais_timeframe: 'H4',
     biais_direction: 'Haussier',
     biais_reasons: '',
-    imageUrl: undefined,
   })
 
   // Données du formulaire POI
@@ -39,7 +40,6 @@ export function BrouillonSectionModal() {
     poi_timeframe: 'H1',
     poi_type: 'Order Block',
     poi_confluences: '',
-    imageUrl: undefined,
   })
 
   // Données du formulaire Entrée
@@ -51,7 +51,6 @@ export function BrouillonSectionModal() {
     entry_tp: '',
     entry_trailing: '',
     entry_reasons: '',
-    imageUrl: undefined,
   })
 
   // Données du formulaire Résultat
@@ -65,6 +64,9 @@ export function BrouillonSectionModal() {
     review_bad: '',
   })
 
+  // Données du formulaire Images
+  const [images, setImages] = useState<Partial<TradeImage>[]>([])
+
   // Quand le modal s'ouvre, on charge les données existantes du brouillon
   useEffect(() => {
     if (!modalOuvert || !slotActif) return
@@ -77,7 +79,9 @@ export function BrouillonSectionModal() {
     if (brouillon.sections.poi) setPoi(brouillon.sections.poi)
     if (brouillon.sections.entry) setEntry(brouillon.sections.entry)
     if (brouillon.sections.result) setResult(brouillon.sections.result)
-  }, [modalOuvert, slotActif, sectionActive])
+    if (brouillon.sections.images) setImages(brouillon.sections.images)
+    else setImages([])
+  }, [modalOuvert, slotActif, sectionActive, brouillons])
 
   // Sauvegarde la section active dans le brouillon et ferme le modal
   const handleSauvegarder = () => {
@@ -87,6 +91,7 @@ export function BrouillonSectionModal() {
     if (sectionSelectionnee === 'poi') sauvegarderSection(slotActif, 'poi', poi)
     if (sectionSelectionnee === 'entry') sauvegarderSection(slotActif, 'entry', entry)
     if (sectionSelectionnee === 'result') sauvegarderSection(slotActif, 'result', result)
+    if (sectionSelectionnee === 'images') sauvegarderSection(slotActif, 'images', images)
 
     fermerModal()
   }
@@ -141,6 +146,9 @@ export function BrouillonSectionModal() {
 
         {/* Corps du formulaire — scrollable */}
         <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+          {sectionSelectionnee === 'images' && (
+            <TradeImageManager images={images} onChange={setImages} />
+          )}
           {sectionSelectionnee === 'biais' && (
             <FormulaireBiais data={biais} onChange={setBiais} />
           )}
@@ -247,12 +255,6 @@ function FormulaireBiais({ data, onChange }: { data: BrouillonBiais; onChange: (
           onChange={(v) => maj('biais_reasons', v)}
         />
       </Champ>
-      <Champ label="Chart biais">
-        <BrouillonImagePicker
-          imageUrl={data.imageUrl}
-          onImageChange={(url) => onChange({ ...data, imageUrl: url ?? undefined })}
-        />
-      </Champ>
     </>
   )
 }
@@ -279,12 +281,6 @@ function FormulairePoi({ data, onChange }: { data: BrouillonPoi; onChange: (d: B
           presets={['OB aligné avec 50% du dernier swing','FVG en dessous comme support','Zone premium / discount']}
           value={data.poi_confluences}
           onChange={(v) => maj('poi_confluences', v)}
-        />
-      </Champ>
-      <Champ label="Chart POI">
-        <BrouillonImagePicker
-          imageUrl={data.imageUrl}
-          onImageChange={(url) => onChange({ ...data, imageUrl: url ?? undefined })}
         />
       </Champ>
     </>
@@ -331,12 +327,6 @@ function FormulaireEntry({ data, onChange }: { data: BrouillonEntry; onChange: (
           presets={["CHoCH M5 confirmé sur le POI","Bougie englobante haussière","Retest du bris de structure","Confluences multiples alignées"]}
           value={data.entry_reasons}
           onChange={(v) => maj('entry_reasons', v)}
-        />
-      </Champ>
-      <Champ label="Chart entrée">
-        <BrouillonImagePicker
-          imageUrl={data.imageUrl}
-          onImageChange={(url) => onChange({ ...data, imageUrl: url ?? undefined })}
         />
       </Champ>
     </>

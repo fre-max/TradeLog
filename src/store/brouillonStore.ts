@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { TradeImage } from '@/types'
 
 // ─── Types des sections de brouillon ─────────────────────────────────────────
 
@@ -7,7 +8,6 @@ export interface BrouillonBiais {
   biais_timeframe: string
   biais_direction: string
   biais_reasons: string
-  imageUrl?: string
 }
 
 // Données du POI (avec image optionnelle)
@@ -15,7 +15,6 @@ export interface BrouillonPoi {
   poi_timeframe: string
   poi_type: string
   poi_confluences: string
-  imageUrl?: string
 }
 
 // Données de l'Entrée (avec image optionnelle)
@@ -27,7 +26,6 @@ export interface BrouillonEntry {
   entry_tp: string
   entry_trailing: string
   entry_reasons: string
-  imageUrl?: string
 }
 
 // Données du Résultat (sans image)
@@ -47,6 +45,7 @@ export interface BrouillonSections {
   poi?: BrouillonPoi
   entry?: BrouillonEntry
   result?: BrouillonResult
+  images?: Partial<TradeImage>[]
 }
 
 // Un brouillon complet (slot 1, 2 ou 3)
@@ -58,7 +57,7 @@ export interface Brouillon {
 }
 
 // Types des sections qu'on peut éditer
-export type SectionType = 'biais' | 'poi' | 'entry' | 'result'
+export type SectionType = 'biais' | 'poi' | 'entry' | 'result' | 'images'
 
 // ─── State du store ───────────────────────────────────────────────────────────
 

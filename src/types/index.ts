@@ -69,16 +69,24 @@ export const StepSchema = z.object({
 export type Step = z.infer<typeof StepSchema>
 export type StepInsert = Omit<Step, 'id' | 'created_at'>
 
-export const StepImageSchema = z.object({
+export const TradeImagePhaseEnum = z.enum(['avant', 'apres'])
+export const TradeImageContextEnum = z.enum(['superieur', 'intermediaire', 'inferieur', 'global'])
+
+export const TradeImageSchema = z.object({
   id: z.string().uuid(),
-  step_id: z.string().uuid(),
+  trade_id: z.string().uuid(),
+  phase: TradeImagePhaseEnum,
+  context: TradeImageContextEnum,
+  url: z.string(),
+  source: ImageSourceEnum.default('upload'),
   storage_path: z.string().optional().nullable(),
-  source: ImageSourceEnum,
-  url: z.string().optional().nullable(),
   created_at: z.string(),
 })
 
-export type StepImage = z.infer<typeof StepImageSchema>
+export type TradeImagePhase = z.infer<typeof TradeImagePhaseEnum>
+export type TradeImageContext = z.infer<typeof TradeImageContextEnum>
+export type TradeImage = z.infer<typeof TradeImageSchema>
+export type TradeImageInsert = Omit<TradeImage, 'id' | 'created_at'>
 
 export const ComboMemorySchema = z.object({
   id: z.string().uuid(),
@@ -91,7 +99,8 @@ export const ComboMemorySchema = z.object({
 export type ComboMemory = z.infer<typeof ComboMemorySchema>
 
 export type TradeWithSteps = Trade & {
-  steps: (Step & { images: StepImage[] })[]
+  steps: Step[]
+  images?: TradeImage[]
 }
 
 export interface TelegramImageResult {

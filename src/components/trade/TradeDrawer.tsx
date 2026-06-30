@@ -6,8 +6,13 @@ import { supabase } from '@/lib/supabase'
 import { useUpdateTrade } from '@/hooks/useTrades'
 import { useQuickEntry } from '@/hooks/useQuickEntry'
 import { ImageAnalysisUpload } from './ImageAnalysisUpload'
+import { useBrouillonStore } from '@/store/brouillonStore'
+import type { Brouillon } from '@/store/brouillonStore'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTradeReasons, useSaveTradeReasons } from '@/hooks/useTradeReasons'
+import { useTradeImages, useSaveTradeImages } from '@/hooks/useTradeImages'
+import { TradeImageManager } from './TradeImageManager'
+import type { TradeImage } from '@/types'
 import { useParams } from 'react-router-dom'
 import {
   buildStepPayloads,
@@ -38,10 +43,16 @@ export function TradeDrawer() {
   const [formData, setFormData] = useState<FormDataState>(INITIAL_FORM_STATE)
   const [stepIds, setStepIds] = useState<EditStepIds>({})
   const [selectedReasonIds, setSelectedReasonIds] = useState<string[]>([])
+  const [tradeImages, setTradeImages] = useState<Partial<TradeImage>[]>([])
   const [saving, setSaving] = useState(false)
   const [manualMode, setManualMode] = useState(false)
+  const [showImagesImport, setShowImagesImport] = useState(false)
+
+  const brouillons = useBrouillonStore((state) => state.brouillons)
+  const brouillonsImages = brouillons.filter(b => b.sections.images && b.sections.images.length > 0)
 
   const { mutateAsync: saveTradeReasons } = useSaveTradeReasons()
+  const { mutateAsync: saveTradeImages } = useSaveTradeImages()
 
   // UUIDs générés côté client pour l'insertion des nouveaux trades et de leurs étapes
   const [tempIds, setTempIds] = useState(() => ({
@@ -60,51 +71,53 @@ export function TradeDrawer() {
     
     if (typeJournal === 'bias') {
       return [
+        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-1', title: 'Infos générales (Biais)', type: 'general' as const },
         { id: 'step-2', title: 'Biais HTF', type: 'biais' as const },
-        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-5', title: 'Résultat & Revue Biais', type: 'result' as const },
       ]
     }
     
     if (typeJournal === 'poi') {
       return [
+        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-1', title: 'Infos générales (POI)', type: 'general' as const },
         { id: 'step-2', title: 'Biais (Contexte)', type: 'biais' as const },
         { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
-        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-5', title: 'Résultat POI', type: 'result' as const },
       ]
     }
     
     if (typeJournal === 'confirmation') {
       return [
+        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-1', title: 'Infos générales (Confirmation)', type: 'general' as const },
         { id: 'step-3', title: 'Zone POI (Contexte)', type: 'poi' as const },
         { id: 'step-4', title: 'Entrée (Confirmation LTF)', type: 'entry' as const },
-        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
       ]
     }
     
     // Par défaut (global) : affichage de toutes les étapes
     return [
+      { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
       { id: 'step-1', title: 'Infos générales', type: 'general' as const },
       { id: 'step-2', title: 'Biais', type: 'biais' as const },
       { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
       { id: 'step-4', title: 'Entrée', type: 'entry' as const },
-      { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
       { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
     ]
   }, [formData.journal_type])
 
   const { data: existingReasons } = useTradeReasons(isEditMode ? editingTrade?.id : undefined)
+  const { data: existingImages } = useTradeImages(isEditMode ? editingTrade?.id : undefined)
 
   useEffect(() => {
-    if (isEditMode && existingReasons) {
-      setSelectedReasonIds(existingReasons)
+    if (isEditMode) {
+      if (existingReasons) setSelectedReasonIds(existingReasons)
+      if (existingImages) setTradeImages(existingImages)
     }
-  }, [existingReasons, isEditMode])
+  }, [existingReasons, existingImages, isEditMode])
 
   useEffect(() => {
     if (!isNewTradeOpen) return
@@ -121,6 +134,7 @@ export function TradeDrawer() {
       })
       setStepIds({})
       setSelectedReasonIds([])
+      setTradeImages([])
       setManualMode(false)
     }
   }, [isNewTradeOpen, editingTrade, currentJournalType])
@@ -135,6 +149,7 @@ export function TradeDrawer() {
     setFormData(INITIAL_FORM_STATE)
     setStepIds({})
     setSelectedReasonIds([])
+    setTradeImages([])
     setTempIds({
       tradeId: crypto.randomUUID(),
       biais: crypto.randomUUID(),
@@ -168,6 +183,8 @@ export function TradeDrawer() {
 
         // Sauvegarde des raisons dynamiques
         await saveTradeReasons({ tradeId: editingTrade.id, reasonIds: selectedReasonIds })
+        // Sauvegarde des nouvelles images structurées
+        await saveTradeImages({ tradeId: editingTrade.id, images: tradeImages })
 
         addToast('Trade mis à jour avec succès !', 'success')
         resetAndClose()
@@ -204,30 +221,10 @@ export function TradeDrawer() {
       const { error: stepsInsertError } = await supabase.from('steps').insert(stepsToInsert)
       if (stepsInsertError) throw stepsInsertError
 
-      // Insertion des images pour chaque étape
-      const stepsTypes = ['biais', 'poi', 'entry', 'result'] as const
-      for (const type of stepsTypes) {
-        const stepId = tempIds[type]
-        const imagesKey = `${type}_images` as const
-        const imagesForm = formData[imagesKey] || []
-        
-        if (imagesForm.length > 0) {
-          console.log(`📡 [TradeDrawer] Insertion de ${imagesForm.length} images pour l'étape ${type}`)
-          const { error: imgErr } = await supabase
-            .from('step_images')
-            .insert(
-              imagesForm.map((img) => ({
-                step_id: stepId,
-                url: img.url,
-                source: img.source || 'upload',
-              }))
-            )
-          if (imgErr) throw imgErr
-        }
-      }
-
       // Sauvegarde des raisons dynamiques
       await saveTradeReasons({ tradeId: tempIds.tradeId, reasonIds: selectedReasonIds })
+      // Sauvegarde des images
+      await saveTradeImages({ tradeId: tempIds.tradeId, images: tradeImages })
 
       await queryClient.invalidateQueries({ queryKey: ['trades'] })
       addToast('Le trade a été enregistré avec succès !', 'success')
@@ -299,28 +296,74 @@ export function TradeDrawer() {
           ) : (() => {
             const tradeIdActuel = isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId
             const getStepId = (type: string) => {
-              if (type === 'general') return ''
+              if (type === 'general' || type === 'reasons') return ''
               if (isEditMode) {
                 return (stepIds as any)[type] || (tempIds as any)[type]
               }
               return (tempIds as any)[type]
             }
 
-            return stepsAffichees.map((step, index) => (
-              <StepBlock
-                key={step.id}
-                number={index + 1}
-                title={step.title}
-                type={step.type}
-                defaultOpen={index === 0}
-                formData={formData}
-                setFormData={setFormData}
-                tradeId={tradeIdActuel}
-                stepId={getStepId(step.type)}
-                selectedReasonIds={selectedReasonIds}
-                setSelectedReasonIds={setSelectedReasonIds}
-              />
-            ))
+            return (
+              <div className="flex flex-col">
+                <div className="border-b border-border">
+                  <div className="flex items-center justify-between px-5 pt-4 pb-2">
+                    <h3 className="text-[13px] font-semibold text-txt uppercase tracking-wider">🖼️ Images (Avant/Après)</h3>
+                    {brouillonsImages.length > 0 && (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowImagesImport(!showImagesImport)}
+                          className="text-[11px] px-2 py-1 bg-[#7c3aed]/10 text-[#7c3aed] border border-[#7c3aed]/25 rounded-md hover:bg-[#7c3aed]/20 transition-colors font-medium"
+                        >
+                          💾 Importer
+                        </button>
+                        {showImagesImport && (
+                          <>
+                            <div className="fixed inset-0 z-[5]" onClick={() => setShowImagesImport(false)} />
+                            <div className="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg shadow-xl z-[10] min-w-[160px] overflow-hidden">
+                              <p className="text-txt3 text-[10px] px-3 py-1.5 border-b border-border uppercase tracking-wider">Choisir un brouillon</p>
+                              {brouillonsImages.map((b) => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (b.sections.images) setTradeImages(b.sections.images)
+                                    setShowImagesImport(false)
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-[12.5px] text-txt hover:bg-accent/8 transition-colors flex items-center gap-2"
+                                >
+                                  <span className="w-5 h-5 rounded-full bg-[#7c3aed]/15 text-[#7c3aed] flex items-center justify-center text-[10px] font-bold">{b.id}</span>
+                                  Brouillon {b.id}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-5 pt-2">
+                    <TradeImageManager images={tradeImages} onChange={setTradeImages} />
+                  </div>
+                </div>
+                {stepsAffichees.map((step, index) => (
+                  <StepBlock
+                    key={step.id}
+                    number={index + 1}
+                    title={step.title}
+                    type={step.type}
+                    defaultOpen={index === 0}
+                    formData={formData}
+                    setFormData={setFormData}
+                    tradeId={tradeIdActuel}
+                    stepId={getStepId(step.type)}
+                    selectedReasonIds={selectedReasonIds}
+                    setSelectedReasonIds={setSelectedReasonIds}
+                    tradeImages={tradeImages}
+                  />
+                ))}
+              </div>
+            )
           })()}
         </div>
 

@@ -23,6 +23,7 @@ interface StepBlockProps {
   stepId?: string
   selectedReasonIds?: string[]
   setSelectedReasonIds?: React.Dispatch<React.SetStateAction<string[]>>
+  tradeImages?: any[]
 }
 
 /**
@@ -49,6 +50,7 @@ export function StepBlock({
   stepId,
   selectedReasonIds = [],
   setSelectedReasonIds,
+  tradeImages = [],
 }: StepBlockProps) {
   const [open, setOpen] = useState(defaultOpen)
 
@@ -149,7 +151,7 @@ export function StepBlock({
           {type === 'poi' && <PoiFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
           {type === 'entry' && <EntryFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
           {type === 'reasons' && setSelectedReasonIds && <TradeReasonsAccordions selectedReasonIds={selectedReasonIds} onChange={setSelectedReasonIds} />}
-          {type === 'result' && <ResultFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
+          {type === 'result' && <ResultFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} tradeImages={tradeImages} />}
         </div>
       )}
     </div>
@@ -420,13 +422,6 @@ function BiaisFields({ formData, setFormData, tradeId, stepId }: { formData: For
           />
         </Field>
       </div>
-      <StepImageManager
-        label="Chart biais"
-        images={formData.biais_images}
-        onChange={(imgs) => setFormData((prev) => ({ ...prev, biais_images: imgs }))}
-        tradeId={tradeId}
-        stepId={stepId}
-      />
     </>
   )
 }
@@ -479,13 +474,6 @@ function PoiFields({ formData, setFormData, tradeId, stepId }: { formData: FormD
           />
         </Field>
       </div>
-      <StepImageManager
-        label="Chart POI"
-        images={formData.poi_images}
-        onChange={(imgs) => setFormData((prev) => ({ ...prev, poi_images: imgs }))}
-        tradeId={tradeId}
-        stepId={stepId}
-      />
     </>
   )
 }
@@ -628,26 +616,22 @@ function EntryFields({ formData, setFormData, tradeId, stepId }: { formData: For
           />
         </Field>
       </div>
-      <StepImageManager
-        label="Chart entrée"
-        images={formData.entry_images}
-        onChange={(imgs) => setFormData((prev) => ({ ...prev, entry_images: imgs }))}
-        tradeId={tradeId}
-        stepId={stepId}
-      />
     </>
   )
 }
 
 // Étape 5 : Résultat, émotions et revue écrite
-function ResultFields({ formData, setFormData, tradeId, stepId }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>>; tradeId?: string; stepId?: string }) {
+function ResultFields({ formData, setFormData, tradeId, stepId, tradeImages }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>>; tradeId?: string; stepId?: string; tradeImages?: any[] }) {
   const updateField = createFieldUpdater(setFormData)
   const [analysantIA, setAnalysantIA] = useState(false)
 
   // Appelle l'Edge Function pour analyser le dénouement (win, loss, missed) depuis la capture de fin
   const analyserDenouementAvecIA = async () => {
-    const premiereImage = formData.result_images[0]
-    if (!premiereImage) return
+    const apresImage = tradeImages?.find(img => img.phase === 'apres')
+    if (!apresImage) {
+      alert("Ajoutez d'abord une image dans la section APRÈS (en haut) pour utiliser l'IA.")
+      return
+    }
 
     setAnalysantIA(true)
     console.log("🚀 [ResultFields] Début de l'analyse IA de clôture...")
@@ -655,7 +639,7 @@ function ResultFields({ formData, setFormData, tradeId, stepId }: { formData: Fo
     try {
       const response = await supabase.functions.invoke('analyze', {
         body: {
-          url: premiereImage.url,
+          url: apresImage.url,
           mode: 'close',
           direction: formData.direction,
           entry_price: formData.entry_price ? parseFloat(formData.entry_price) : null,
@@ -822,17 +806,10 @@ function ResultFields({ formData, setFormData, tradeId, stepId }: { formData: Fo
             onChange={(e) => updateField('review_bad', e.target.value)}
           />
         </Field>
+        </Field>
       </div>
 
-      <StepImageManager
-        label="Chart Résultat (Fin du trade)"
-        images={formData.result_images}
-        onChange={(imgs) => setFormData((prev) => ({ ...prev, result_images: imgs }))}
-        tradeId={tradeId}
-        stepId={stepId}
-      />
-
-      {formData.result_images && formData.result_images.length > 0 && (
+      {tradeImages && tradeImages.filter(img => img.phase === 'apres').length > 0 && (
         <div className="mt-3">
           <button
             type="button"
@@ -848,7 +825,7 @@ function ResultFields({ formData, setFormData, tradeId, stepId }: { formData: Fo
             ) : (
               <>
                 <span>🧠</span>
-                <span>Analyser la capture de fin par l'IA</span>
+                <span>Analyser la capture APRÈS par l'IA</span>
               </>
             )}
           </button>
@@ -858,58 +835,4 @@ function ResultFields({ formData, setFormData, tradeId, stepId }: { formData: Fo
   )
 }
 
-interface StepImageManagerProps {
-  label: string
-  images: { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[]
-  onChange: (images: { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[]) => void
-  tradeId?: string
-  stepId?: string
-}
 
-function StepImageManager({
-  label,
-  images,
-  onChange,
-  tradeId,
-  stepId,
-}: StepImageManagerProps) {
-  return (
-    <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-border/40">
-      <label className="text-txt3 text-[11px] font-semibold uppercase tracking-wider">{label}</label>
-      
-      {/* Liste des images existantes pour cette étape */}
-      {images && images.length > 0 && (
-        <div className="flex gap-2 flex-wrap mb-2">
-          {images.map((img) => (
-            <div
-              key={img.id}
-              className="relative w-28 h-20 bg-bg border border-border2 rounded-md overflow-hidden group flex-shrink-0"
-            >
-              <img src={img.url} alt="Chart thumbnail" className="w-full h-full object-cover" />
-              <button
-                type="button"
-                onClick={() => onChange(images.filter((i) => i.id !== img.id))}
-                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-semibold transition-opacity"
-              >
-                Supprimer
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Composant de téléversement d'image réel */}
-      {tradeId && stepId ? (
-        <ImageField
-          tradeId={tradeId}
-          stepId={stepId}
-          onUpload={(publicUrl) => {
-            onChange([...images, { id: crypto.randomUUID(), url: publicUrl, source: 'upload' }])
-          }}
-        />
-      ) : (
-        <p className="text-txt3 text-[11px] italic">Identifiants manquants pour téléverser une image.</p>
-      )}
-    </div>
-  )
-}

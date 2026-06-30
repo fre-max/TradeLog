@@ -39,17 +39,19 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['steps']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['steps']['Insert']>
       }
-      step_images: {
+      trade_images: {
         Row: {
           id: string
-          step_id: string
-          storage_path: string | null
+          trade_id: string
+          phase: 'avant' | 'apres'
+          context: 'superieur' | 'intermediaire' | 'inferieur' | 'global'
+          url: string
           source: 'telegram' | 'upload' | 'url'
-          url: string | null
+          storage_path: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['step_images']['Row'], 'id' | 'created_at'>
-        Update: Partial<Database['public']['Tables']['step_images']['Insert']>
+        Insert: Omit<Database['public']['Tables']['trade_images']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['trade_images']['Insert']>
       }
       combo_memory: {
         Row: {

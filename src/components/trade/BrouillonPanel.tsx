@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 // Définit les sections affichées dans chaque slot avec leur icône
 const SECTIONS_INFO: { key: SectionType; label: string; emoji: string }[] = [
+  { key: 'images', label: 'Images (Avant/Après)', emoji: '🖼️' },
   { key: 'biais', label: 'Biais', emoji: '📊' },
   { key: 'poi', label: 'POI / Zone', emoji: '📍' },
   { key: 'entry', label: 'Entrée', emoji: '🎯' },
@@ -26,8 +27,11 @@ export function BrouillonPanel() {
   if (!isPanelOpen) return null
 
   // Compte le nombre de sections remplies dans un brouillon
-  const compterSections = (b: Brouillon) =>
-    Object.values(b.sections).filter(Boolean).length
+  const compterSections = (b: Brouillon) => {
+    let count = Object.values(b.sections).filter(Boolean).length
+    if (b.sections.images && b.sections.images.length === 0) count -= 1
+    return count
+  }
 
   // Formate la date relative "il y a X min / heures / jours"
   const formaterDate = (iso: string | null): string => {
@@ -117,7 +121,7 @@ export function BrouillonPanel() {
                   <div className="flex items-center gap-2">
                     {!estVide && (
                       <span className="text-[11px] bg-accent/15 text-accent px-2 py-0.5 rounded-full font-medium">
-                        {nbSections}/4
+                        {nbSections}/5
                       </span>
                     )}
                     {!estVide && (
@@ -140,7 +144,7 @@ export function BrouillonPanel() {
                 <div className="flex flex-col gap-1.5">
                   {SECTIONS_INFO.map(({ key, label, emoji }) => {
                     const sectionsData = brouillon.sections[key]
-                    const remplie = Boolean(sectionsData)
+                    const remplie = Boolean(sectionsData && (!Array.isArray(sectionsData) || sectionsData.length > 0))
 
                     return (
                       <button
@@ -171,9 +175,9 @@ export function BrouillonPanel() {
                         </span>
 
                         {/* Miniature image si disponible */}
-                        {sectionsData && 'imageUrl' in sectionsData && sectionsData.imageUrl && (
+                        {remplie && key === 'images' && Array.isArray(sectionsData) && sectionsData.length > 0 && (
                           <img
-                            src={sectionsData.imageUrl as string}
+                            src={(sectionsData as any)[0].url}
                             alt=""
                             className="w-8 h-6 object-cover rounded border border-border2 flex-shrink-0"
                           />
