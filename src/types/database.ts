@@ -62,6 +62,51 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['combo_memory']['Row'], 'id'>
         Update: Partial<Database['public']['Tables']['combo_memory']['Insert']>
       }
+      reason_families: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          icon: string | null
+          order: number | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['reason_families']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['reason_families']['Insert']>
+      }
+      reason_catalog: {
+        Row: {
+          id: string
+          user_id: string
+          family_id: string
+          title: string
+          description: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['reason_catalog']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['reason_catalog']['Insert']>
+      }
+      reason_variants: {
+        Row: {
+          id: string
+          reason_id: string
+          name: string
+          image_url: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['reason_variants']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['reason_variants']['Insert']>
+      }
+      trade_reasons: {
+        Row: {
+          trade_id: string
+          reason_id: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['trade_reasons']['Row'], 'created_at'>
+        Update: Partial<Database['public']['Tables']['trade_reasons']['Insert']>
+      }
     }
   }
 }

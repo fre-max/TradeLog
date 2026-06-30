@@ -8,11 +8,10 @@ import type { Brouillon } from '@/store/brouillonStore'
 import { ImageField } from '@/components/fields/ImageField'
 import { supabase } from '@/lib/supabase'
 import { useStrategies } from '@/hooks/useStrategies'
+import { TradeReasonsAccordions } from './TradeReasonsAccordions'
 
-type StepType = 'general' | 'biais' | 'poi' | 'entry' | 'result' | 'custom'
+type StepType = 'general' | 'biais' | 'poi' | 'entry' | 'result' | 'custom' | 'reasons'
 
-// Props reçues par chaque bloc d'étape
-// Permet de synchroniser les états locaux avec le formulaire global du TradeDrawer
 interface StepBlockProps {
   number: number
   title: string
@@ -22,6 +21,8 @@ interface StepBlockProps {
   setFormData: React.Dispatch<React.SetStateAction<FormDataState>>
   tradeId?: string
   stepId?: string
+  selectedReasonIds?: string[]
+  setSelectedReasonIds?: React.Dispatch<React.SetStateAction<string[]>>
 }
 
 /**
@@ -46,6 +47,8 @@ export function StepBlock({
   setFormData,
   tradeId,
   stepId,
+  selectedReasonIds = [],
+  setSelectedReasonIds,
 }: StepBlockProps) {
   const [open, setOpen] = useState(defaultOpen)
 
@@ -145,6 +148,7 @@ export function StepBlock({
           {type === 'biais' && <BiaisFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
           {type === 'poi' && <PoiFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
           {type === 'entry' && <EntryFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
+          {type === 'reasons' && setSelectedReasonIds && <TradeReasonsAccordions selectedReasonIds={selectedReasonIds} onChange={setSelectedReasonIds} />}
           {type === 'result' && <ResultFields formData={formData} setFormData={setFormData} tradeId={tradeId} stepId={stepId} />}
         </div>
       )}

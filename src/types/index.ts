@@ -99,11 +99,19 @@ export interface TelegramImageResult {
   date: number
 }
 
-// ─── TYPES POUR LE CATALOGUE DE RAISONS TECHNIQUES ─────────
+// ─── TYPES POUR LE CATALOGUE DE RAISONS DYNAMIQUES ─────────
 
-// Types de contexte pour les raisons techniques
-export const ReasonTypeEnum = z.enum(['entry', 'sl', 'tp', 'trailing', 'biais', 'poi', 'confirmation'])
-export type ReasonType = z.infer<typeof ReasonTypeEnum>
+export const ReasonFamilySchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  name: z.string(),
+  icon: z.string().optional().nullable(),
+  order: z.number().int().default(0),
+  created_at: z.string(),
+})
+
+export type ReasonFamily = z.infer<typeof ReasonFamilySchema>
+export type ReasonFamilyInsert = Omit<ReasonFamily, 'id' | 'created_at'>
 
 // Schéma et type pour une variante de raison (ex: mineur, moyen, grand)
 export const ReasonVariantSchema = z.object({
@@ -122,9 +130,9 @@ export type ReasonVariantInsert = Omit<ReasonVariant, 'id' | 'created_at'>
 export const ReasonCatalogSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
+  family_id: z.string().uuid(),
   title: z.string(),
   description: z.string().optional().nullable(),
-  type: ReasonTypeEnum,
   created_at: z.string(),
 })
 

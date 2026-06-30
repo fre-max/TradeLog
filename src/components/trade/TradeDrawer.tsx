@@ -7,6 +7,7 @@ import { useUpdateTrade } from '@/hooks/useTrades'
 import { useQuickEntry } from '@/hooks/useQuickEntry'
 import { ImageAnalysisUpload } from './ImageAnalysisUpload'
 import { useQueryClient } from '@tanstack/react-query'
+import { useTradeReasons, useSaveTradeReasons } from '@/hooks/useTradeReasons'
 import { useParams } from 'react-router-dom'
 import {
   buildStepPayloads,
@@ -36,8 +37,11 @@ export function TradeDrawer() {
 
   const [formData, setFormData] = useState<FormDataState>(INITIAL_FORM_STATE)
   const [stepIds, setStepIds] = useState<EditStepIds>({})
+  const [selectedReasonIds, setSelectedReasonIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [manualMode, setManualMode] = useState(false)
+
+  const { mutateAsync: saveTradeReasons } = useSaveTradeReasons()
 
   // UUIDs générés côté client pour l'insertion des nouveaux trades et de leurs étapes
   const [tempIds, setTempIds] = useState(() => ({
@@ -58,6 +62,7 @@ export function TradeDrawer() {
       return [
         { id: 'step-1', title: 'Infos générales (Biais)', type: 'general' as const },
         { id: 'step-2', title: 'Biais HTF', type: 'biais' as const },
+        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-5', title: 'Résultat & Revue Biais', type: 'result' as const },
       ]
     }
@@ -67,6 +72,7 @@ export function TradeDrawer() {
         { id: 'step-1', title: 'Infos générales (POI)', type: 'general' as const },
         { id: 'step-2', title: 'Biais (Contexte)', type: 'biais' as const },
         { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
+        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-5', title: 'Résultat POI', type: 'result' as const },
       ]
     }
@@ -76,6 +82,7 @@ export function TradeDrawer() {
         { id: 'step-1', title: 'Infos générales (Confirmation)', type: 'general' as const },
         { id: 'step-3', title: 'Zone POI (Contexte)', type: 'poi' as const },
         { id: 'step-4', title: 'Entrée (Confirmation LTF)', type: 'entry' as const },
+        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
         { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
       ]
     }
@@ -86,9 +93,18 @@ export function TradeDrawer() {
       { id: 'step-2', title: 'Biais', type: 'biais' as const },
       { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
       { id: 'step-4', title: 'Entrée', type: 'entry' as const },
+      { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
       { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
     ]
   }, [formData.journal_type])
+
+  const { data: existingReasons } = useTradeReasons(isEditMode ? editingTrade?.id : undefined)
+
+  useEffect(() => {
+    if (isEditMode && existingReasons) {
+      setSelectedReasonIds(existingReasons)
+    }
+  }, [existingReasons, isEditMode])
 
   useEffect(() => {
     if (!isNewTradeOpen) return
@@ -104,6 +120,7 @@ export function TradeDrawer() {
         journal_type: currentJournalType,
       })
       setStepIds({})
+      setSelectedReasonIds([])
       setManualMode(false)
     }
   }, [isNewTradeOpen, editingTrade, currentJournalType])
@@ -117,6 +134,7 @@ export function TradeDrawer() {
   const resetAndClose = () => {
     setFormData(INITIAL_FORM_STATE)
     setStepIds({})
+    setSelectedReasonIds([])
     setTempIds({
       tradeId: crypto.randomUUID(),
       biais: crypto.randomUUID(),
@@ -147,6 +165,9 @@ export function TradeDrawer() {
           previousStatus: editingTrade.status,
           preserveBiaisFields,
         })
+
+        // Sauvegarde des raisons dynamiques
+        await saveTradeReasons({ tradeId: editingTrade.id, reasonIds: selectedReasonIds })
 
         addToast('Trade mis à jour avec succès !', 'success')
         resetAndClose()
@@ -204,6 +225,9 @@ export function TradeDrawer() {
           if (imgErr) throw imgErr
         }
       }
+
+      // Sauvegarde des raisons dynamiques
+      await saveTradeReasons({ tradeId: tempIds.tradeId, reasonIds: selectedReasonIds })
 
       await queryClient.invalidateQueries({ queryKey: ['trades'] })
       addToast('Le trade a été enregistré avec succès !', 'success')
@@ -293,6 +317,8 @@ export function TradeDrawer() {
                 setFormData={setFormData}
                 tradeId={tradeIdActuel}
                 stepId={getStepId(step.type)}
+                selectedReasonIds={selectedReasonIds}
+                setSelectedReasonIds={setSelectedReasonIds}
               />
             ))
           })()}
