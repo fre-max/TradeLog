@@ -15,8 +15,6 @@ CREATE TABLE trade_images (
   UNIQUE(trade_id, phase, context)
 );
 
-
-------
 -- 3. Row Level Security (RLS)
 ALTER TABLE trade_images ENABLE ROW LEVEL SECURITY;
 
