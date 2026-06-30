@@ -14,6 +14,21 @@ export const EmotionEnum = z.enum([
   'Revenge','Hésitant','Neutre','Focalisé'
 ])
 
+export const StrategySchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  name: z.string(),
+  version: z.string(),
+  context_rules: z.string().optional().nullable(),
+  entry_rules: z.string().optional().nullable(),
+  risk_rules: z.string().optional().nullable(),
+  management_rules: z.string().optional().nullable(),
+  created_at: z.string(),
+})
+
+export type Strategy = z.infer<typeof StrategySchema>
+export type StrategyInsert = Omit<Strategy, 'id' | 'created_at'>
+
 export const TradeSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -28,6 +43,7 @@ export const TradeSchema = z.object({
   rr_realized: z.number().optional().nullable(),
   exit_type: ExitTypeEnum.optional().nullable(),
   emotion: EmotionEnum.optional().nullable(),
+  strategy_id: z.string().uuid().optional().nullable(),
   status: StatusEnum.default('in_progress'),
   // Le type de journal permet de masquer/afficher dynamiquement les étapes du formulaire et de filtrer l'affichage
   journal_type: JournalTypeEnum.default('global'),

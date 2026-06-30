@@ -13,6 +13,7 @@ export const INITIAL_FORM_STATE = {
   result: 'win' as 'win' | 'loss' | 'breakeven' | 'missed' | null,
   exit_type: 'tp' as 'tp' | 'sl' | 'breakeven' | 'trailing' | 'manual',
   emotion: '',
+  strategy_id: '',
   journal_type: 'global' as 'global' | 'bias' | 'poi' | 'confirmation',
 
   biais_timeframe: 'H4',
@@ -97,6 +98,7 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
     result: trade.result ?? null,
     exit_type: trade.exit_type ?? 'tp',
     emotion: trade.emotion ?? '',
+    strategy_id: trade.strategy_id ?? '',
     journal_type: trade.journal_type ?? 'global',
 
     biais_timeframe: biais?.timeframe ?? gemini?.timeframe ?? 'H4',
@@ -282,6 +284,7 @@ export function buildTradePayload(formData: FormDataState, status: TradeWithStep
     rr_realized: formData.rr_realized ? parseFloat(formData.rr_realized) : null,
     exit_type: formData.exit_type,
     emotion: formData.emotion || null,
+    strategy_id: formData.strategy_id || null,
     journal_type: formData.journal_type,
     status,
   }

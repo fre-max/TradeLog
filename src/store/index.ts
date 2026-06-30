@@ -78,6 +78,7 @@ interface FilterState {
   filterPair: string | null
   filterSession: string | null
   filterResult: string | null
+  filterStrategyId: string | null
   setFilter: (key: keyof Omit<FilterState, 'setFilter' | 'resetFilters'>, value: string | null) => void
   resetFilters: () => void
 }
@@ -86,7 +87,8 @@ export const useFilterStore = create<FilterState>((set) => ({
   filterPair: null,
   filterSession: null,
   filterResult: null,
+  filterStrategyId: null,
 
   setFilter: (key, value) => set({ [key]: value }),
-  resetFilters: () => set({ filterPair: null, filterSession: null, filterResult: null }),
+  resetFilters: () => set({ filterPair: null, filterSession: null, filterResult: null, filterStrategyId: null }),
 }))

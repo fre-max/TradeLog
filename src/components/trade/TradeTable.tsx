@@ -33,6 +33,7 @@ export function TradeTable() {
   const addToast = useUIStore((state) => state.addToast)
   const filterPair = useFilterStore((state) => state.filterPair)
   const filterResult = useFilterStore((state) => state.filterResult)
+  const filterStrategyId = useFilterStore((state) => state.filterStrategyId)
   const [sorting, setSorting] = useState<SortingState>([])
 
   // On récupère le type de journal depuis les paramètres d'URL ( bias, poi, confirmation, global )
@@ -328,14 +329,17 @@ export function TradeTable() {
   // Filtrage côté client mémoïsé pour stabiliser la référence et inclure le type de journal
   const filtered = useMemo(() => {
     return trades.filter((t) => {
-      // Filtrage du journal : on n'affiche que le type correspondant, sauf pour le journal global qui montre tout
+      // Filtre Type de Journal
       if (journalType !== 'global' && (t.journal_type || 'global') !== journalType) return false
-
+      // Filtre Paire
       if (filterPair && t.pair !== filterPair) return false
+      // Filtre Résultat
       if (filterResult && t.result !== filterResult) return false
+      // Filtre Stratégie
+      if (filterStrategyId && t.strategy_id !== filterStrategyId) return false
       return true
     })
-  }, [trades, filterPair, filterResult, journalType])
+  }, [trades, filterPair, filterResult, filterStrategyId, journalType])
 
   const table = useReactTable({
     data: filtered,

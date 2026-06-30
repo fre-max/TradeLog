@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import { useFilterStore, useUIStore } from '@/store'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useStrategies } from '@/hooks/useStrategies'
 
 const PAIRS = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'US30', 'BTCUSD']
 
@@ -15,6 +16,7 @@ const JOURNAL_ITEMS = [
 
 const NAV_ITEMS = [
   { icon: '📊', label: 'Statistiques', path: '/stats' },
+  { icon: '📖', label: 'Playbook', path: '/playbook' },
   { icon: '📚', label: 'Catalogue raisons', path: '/catalog' },
 ]
 
@@ -22,9 +24,11 @@ export function Sidebar() {
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen)
   const closeSidebar = useUIStore((state) => state.closeSidebar)
   const filterPair = useFilterStore((state) => state.filterPair)
+  const filterStrategyId = useFilterStore((state) => state.filterStrategyId)
   const setFilter = useFilterStore((state) => state.setFilter)
   const location = useLocation()
   const navigate = useNavigate()
+  const { data: strategies = [] } = useStrategies()
 
   // Navigation vers une page + fermeture de la sidebar sur mobile
   const naviguerVers = (path: string) => {
@@ -95,8 +99,21 @@ export function Sidebar() {
         </div>
 
         {/* Filtres rapides par paire */}
-        <div className="px-2">
+        <div className="px-2 mb-4">
           <p className="text-[11px] font-medium text-txt3 uppercase tracking-wider px-2 mb-1">Filtres rapides</p>
+          
+          <div className="px-2 mb-3">
+            <select
+              value={filterStrategyId || ''}
+              onChange={(e) => setFilter('filterStrategyId', e.target.value || null)}
+              className="w-full bg-bg border border-border2 rounded-md text-txt px-2 py-1.5 text-[12.5px] outline-none focus:border-accent"
+            >
+              <option value="">Toutes les stratégies</option>
+              {strategies.map(s => (
+                <option key={s.id} value={s.id}>{s.name} ({s.version})</option>
+              ))}
+            </select>
+          </div>
           {PAIRS.map((pair) => (
             <NavItem
               key={pair}

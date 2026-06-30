@@ -374,18 +374,12 @@ Deno.serve(async (req) => {
         type: 'biais',
         title: 'Quick Entry — IA',
         timeframe: analysis.timeframe || null,
-        notes: [
-          analysis.patterns?.length
+        notes: analysis.patterns?.length
             ? `Patterns SMC identifiés : ${analysis.patterns.join(', ')}`
             : null,
-          analysis.entry_price ? `Entrée : ${analysis.entry_price}` : null,
-          analysis.sl ? `SL : ${analysis.sl}` : null,
-          analysis.tp ? `TP : ${analysis.tp}` : null,
-          analysis.exit_time ? `Sortie : ${analysis.exit_time}` : null,
-          analysis.rr_realized ? `R:R Réalisé : ${analysis.rr_realized}` : null,
-        ].filter(Boolean).join('\n') || null,
         fields: {
           is_quick_entry: true,
+          extracted: analysis,
           entry_price: analysis.entry_price,
           sl: analysis.sl,
           tp: analysis.tp,

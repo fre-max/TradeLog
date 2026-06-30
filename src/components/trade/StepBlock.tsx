@@ -7,6 +7,7 @@ import { useBrouillonStore } from '@/store/brouillonStore'
 import type { Brouillon } from '@/store/brouillonStore'
 import { ImageField } from '@/components/fields/ImageField'
 import { supabase } from '@/lib/supabase'
+import { useStrategies } from '@/hooks/useStrategies'
 
 type StepType = 'general' | 'biais' | 'poi' | 'entry' | 'result' | 'custom'
 
@@ -207,13 +208,60 @@ const createFieldUpdater = (setFormData: React.Dispatch<React.SetStateAction<For
 // Étape 1 : Informations générales du trade (Paire, date, session, heure, type de journal)
 function GeneralFields({ formData, setFormData }: { formData: FormDataState; setFormData: React.Dispatch<React.SetStateAction<FormDataState>> }) {
   const updateField = createFieldUpdater(setFormData)
-
   const isBiais = formData.journal_type === 'bias'
+  const { data: strategies = [] } = useStrategies()
+  const [showChecklist, setShowChecklist] = useState(false)
+
+  const selectedStrategy = strategies.find(s => s.id === formData.strategy_id)
 
   return (
     <>
-      <div className="mb-3">
+      {/* Modale Checklist Stratégie */}
+      {showChecklist && selectedStrategy && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50" onClick={() => setShowChecklist(false)}>
+          <div className="bg-surface border border-border rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-border bg-surface2 flex items-center justify-between">
+              <h3 className="font-bold text-txt">
+                Checklist : {selectedStrategy.name} <span className="text-accent text-[11px] uppercase ml-2">{selectedStrategy.version}</span>
+              </h3>
+              <button onClick={() => setShowChecklist(false)} className="text-txt3 hover:text-txt">✕</button>
+            </div>
+            <div className="p-5 overflow-y-auto space-y-4 bg-bg text-[13px] text-txt2 leading-relaxed">
+              {selectedStrategy.context_rules && (
+                <div>
+                  <strong className="text-txt text-xs uppercase block mb-1">🗺️ Contexte & Biais</strong>
+                  <p className="whitespace-pre-wrap">{selectedStrategy.context_rules}</p>
+                </div>
+              )}
+              {selectedStrategy.entry_rules && (
+                <div>
+                  <strong className="text-txt text-xs uppercase block mb-1">⚡ Conditions d'Entrée</strong>
+                  <p className="whitespace-pre-wrap">{selectedStrategy.entry_rules}</p>
+                </div>
+              )}
+              {selectedStrategy.risk_rules && (
+                <div>
+                  <strong className="text-txt text-xs uppercase block mb-1">🛡️ Gestion du Risque</strong>
+                  <p className="whitespace-pre-wrap">{selectedStrategy.risk_rules}</p>
+                </div>
+              )}
+              {selectedStrategy.management_rules && (
+                <div>
+                  <strong className="text-txt text-xs uppercase block mb-1">⚖️ Gestion du Trade</strong>
+                  <p className="whitespace-pre-wrap">{selectedStrategy.management_rules}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-border flex justify-end">
+              <button onClick={() => setShowChecklist(false)} className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium">J'ai compris</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
         <Field label="Type de Journal">
+
           <Select
             value={formData.journal_type}
             onChange={(e) => updateField('journal_type', e.target.value as any)}
@@ -223,6 +271,30 @@ function GeneralFields({ formData, setFormData }: { formData: FormDataState; set
             <option value="poi">🗺️ POI / Zones</option>
             <option value="confirmation">⚡ Confirmation</option>
           </Select>
+        </Field>
+        
+        <Field label="Version de la Stratégie">
+          <div className="flex gap-2">
+            <Select
+              value={formData.strategy_id}
+              onChange={(e) => updateField('strategy_id', e.target.value)}
+            >
+              <option value="">Aucune stratégie</option>
+              {strategies.map((s) => (
+                <option key={s.id} value={s.id}>{s.name} ({s.version})</option>
+              ))}
+            </Select>
+            {formData.strategy_id && (
+              <button
+                type="button"
+                onClick={() => setShowChecklist(true)}
+                className="flex-shrink-0 px-3 py-2 bg-accent/10 text-accent border border-accent/20 rounded-md text-[12px] font-medium hover:bg-accent/20 transition-colors"
+                title="Voir la checklist"
+              >
+                📋 Règles
+              </button>
+            )}
+          </div>
         </Field>
       </div>
 

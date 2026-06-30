@@ -1,5 +1,6 @@
 import { useTrades } from './useTrades'
 import type { TradeWithSteps } from '@/types'
+import { useFilterStore } from '@/store'
 
 // ─── Types pour les statistiques ──────────────────────────
 
@@ -40,7 +41,13 @@ export interface TradeStats {
 // console.log(parPaire[0].nom)  // "XAUUSD"
 
 export function useTradeStats(): TradeStats {
-  const { data: trades = [], isLoading } = useTrades()
+  const { data: allTrades = [], isLoading } = useTrades()
+  const filterStrategyId = useFilterStore((state) => state.filterStrategyId)
+
+  // Filtrer les trades si une stratégie est sélectionnée
+  const trades = filterStrategyId 
+    ? allTrades.filter(t => t.strategy_id === filterStrategyId) 
+    : allTrades
 
   // 1️⃣ Statistiques globales
   const globales = calculerStatsGlobales(trades)
