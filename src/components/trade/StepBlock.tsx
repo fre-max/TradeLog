@@ -806,7 +806,6 @@ function ResultFields({ formData, setFormData, tradeId, stepId, tradeImages }: {
             onChange={(e) => updateField('review_bad', e.target.value)}
           />
         </Field>
-        </Field>
       </div>
 
       {tradeImages && tradeImages.filter(img => img.phase === 'apres').length > 0 && (
