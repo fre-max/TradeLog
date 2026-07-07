@@ -44,7 +44,6 @@ export const INITIAL_FORM_STATE = {
   poi_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
   entry_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
   result_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
-
   // Raisons techniques issues du catalogue (liées aux étapes)
   biais_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
   poi_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
@@ -129,7 +128,6 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
     poi_images: poi?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
     entry_images: entry?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
     result_images: review?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
-
     // Extractions des raisons du catalogue depuis les JSONB des étapes
     biais_catalog_reasons: ((biaisFields.catalog_reasons ?? []) as any[]).map(r => ({
       reason_id: String(r.reason_id),

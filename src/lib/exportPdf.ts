@@ -45,7 +45,8 @@ export async function exportPdf(trade: TradeWithSteps) {
       `Direction : ${biaisFields.direction ?? '—'}`,
       `Timeframe : ${biais.timeframe ?? '—'}`,
     ]
-    const imageUrl = biais.images?.[0]?.url ?? biais.images?.[0]?.storage_path ?? null
+    const img = trade.images?.find(i => i.phase === 'avant' && (i.context === 'superieur' || i.context === 'global'))
+    const imageUrl = img?.url ?? img?.storage_path ?? null
     y = await dessinerSection(doc, '📊 BIAIS', lignes, biais.notes ?? null, imageUrl, y)
     y += 4
   }
@@ -57,7 +58,8 @@ export async function exportPdf(trade: TradeWithSteps) {
       `Type : ${String(poiFields.zone_type ?? '—')}`,
       `Timeframe : ${poi.timeframe ?? '—'}`,
     ]
-    const imageUrl = poi.images?.[0]?.url ?? poi.images?.[0]?.storage_path ?? null
+    const img = trade.images?.find(i => i.phase === 'avant' && i.context === 'intermediaire')
+    const imageUrl = img?.url ?? img?.storage_path ?? null
     y = await dessinerSection(doc, '📍 POI / ZONE', lignes, poi.notes ?? null, imageUrl, y)
     y += 4
   }
@@ -69,7 +71,8 @@ export async function exportPdf(trade: TradeWithSteps) {
       `Setup : ${String(entryFields.setup ?? '—')}  |  Timeframe : ${entry.timeframe ?? '—'}`,
       `Prix entrée : ${String(entryFields.price ?? '—')}  |  SL : ${String(entryFields.sl ?? '—')}  |  TP : ${String(entryFields.tp ?? '—')}`,
     ]
-    const imageUrl = entry.images?.[0]?.url ?? entry.images?.[0]?.storage_path ?? null
+    const img = trade.images?.find(i => i.phase === 'avant' && i.context === 'inferieur')
+    const imageUrl = img?.url ?? img?.storage_path ?? null
     y = await dessinerSection(doc, '🎯 ENTRÉE', lignes, entry.notes ?? null, imageUrl, y)
     y += 4
   }
@@ -84,7 +87,9 @@ export async function exportPdf(trade: TradeWithSteps) {
       `⚠️   À améliorer :`,
       String(reviewFields.bad ?? reviewFields.improve ?? '—'),
     ]
-    y = await dessinerSection(doc, '📝 REVIEW', lignesReview, null, null, y)
+    const img = trade.images?.find(i => i.phase === 'apres')
+    const imageUrl = img?.url ?? img?.storage_path ?? null
+    y = await dessinerSection(doc, '📝 REVIEW', lignesReview, null, imageUrl, y)
   }
 
   // ─── 3️⃣ Pied de page ─────────────────────────────────────────────────────

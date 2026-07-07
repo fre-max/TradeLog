@@ -9,6 +9,7 @@ import { ImageField } from '@/components/fields/ImageField'
 import { supabase } from '@/lib/supabase'
 import { useStrategies } from '@/hooks/useStrategies'
 import { TradeReasonsAccordions } from './TradeReasonsAccordions'
+import type { SelectedTradeReason } from '@/hooks/useTradeReasons'
 
 type StepType = 'general' | 'biais' | 'poi' | 'entry' | 'result' | 'custom' | 'reasons'
 
@@ -21,8 +22,12 @@ interface StepBlockProps {
   setFormData: React.Dispatch<React.SetStateAction<FormDataState>>
   tradeId?: string
   stepId?: string
+  // IDs simples pour la compatibilité (calculé à partir de selectedReasons)
   selectedReasonIds?: string[]
   setSelectedReasonIds?: React.Dispatch<React.SetStateAction<string[]>>
+  // Objets complets avec variantes (nouvelle fonctionnalité)
+  selectedReasons?: SelectedTradeReason[]
+  setSelectedReasons?: React.Dispatch<React.SetStateAction<SelectedTradeReason[]>>
   tradeImages?: any[]
 }
 
@@ -50,6 +55,8 @@ export function StepBlock({
   stepId,
   selectedReasonIds = [],
   setSelectedReasonIds,
+  selectedReasons,
+  setSelectedReasons,
   tradeImages = [],
 }: StepBlockProps) {
   const [open, setOpen] = useState(defaultOpen)
@@ -268,7 +275,14 @@ export function StepBlock({
               imagesReutilisables={autresImagesDuTrade}
             />
           )}
-          {type === 'reasons' && setSelectedReasonIds && <TradeReasonsAccordions selectedReasonIds={selectedReasonIds} onChange={setSelectedReasonIds} />}
+          {type === 'reasons' && (setSelectedReasonIds || setSelectedReasons) && (
+            <TradeReasonsAccordions
+              selectedReasonIds={selectedReasonIds}
+              onChange={(ids) => setSelectedReasonIds?.(ids)}
+              selectedReasons={selectedReasons}
+              onChangeReasons={setSelectedReasons}
+            />
+          )}
           {type === 'result' && (
             <ResultFields
               formData={formData}
