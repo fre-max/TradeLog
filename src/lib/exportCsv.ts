@@ -1,4 +1,4 @@
-import type { TradeWithSteps } from '@/types'
+import type { TradeWithSteps, StepWithImages } from '@/types'
 
 /**
  * Génère et télécharge un fichier CSV avec tous les trades.
@@ -48,10 +48,10 @@ export function exportCsv(trades: TradeWithSteps[]) {
 
   const lignes = trades.map((trade) => {
     // Récupère les étapes du trade par type
-    const biais = trade.steps.find((s) => s.type === 'biais')
-    const poi   = trade.steps.find((s) => s.type === 'poi')
-    const entry = trade.steps.find((s) => s.type === 'entry')
-    const review = trade.steps.find((s) => s.type === 'result')
+    const biais = trade.steps.find((s) => s.type === 'biais') as StepWithImages | undefined
+    const poi   = trade.steps.find((s) => s.type === 'poi') as StepWithImages | undefined
+    const entry = trade.steps.find((s) => s.type === 'entry') as StepWithImages | undefined
+    const review = trade.steps.find((s) => s.type === 'result') as StepWithImages | undefined
 
     // Récupère les champs spécifiques de chaque section
     const biaisFields  = (biais?.fields ?? {}) as Record<string, unknown>

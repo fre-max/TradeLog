@@ -20,8 +20,8 @@ export default function Settings() {
 
   trades.forEach(trade => {
     totalSteps += trade.steps?.length || 0
-    trade.steps?.forEach(step => {
-      step.images?.forEach(img => {
+    trade.steps?.forEach((step: any) => {
+      step.images?.forEach((img: any) => {
         // Les images issues d'upload direct ou de Telegram sont stockées dans le bucket Supabase
         if (img.source === 'upload' || img.source === 'telegram') {
           totalImagesStockees++

@@ -91,7 +91,7 @@ export function useDeleteTrade() {
 // Supprime les images retirées et insère les nouvelles
 async function synchroniserStepImages(
   stepId: string,
-  imagesForm: { id: string; url: string; source: string }[]
+  imagesForm: { id: string; url: string; source: string; phase?: string }[]
 ) {
   console.log(`📡 [syncImages] Synchronisation des images pour le step : ${stepId}`);
   
@@ -125,6 +125,7 @@ async function synchroniserStepImages(
           step_id: stepId,
           url: img.url,
           source: img.source || 'upload',
+          phase: img.phase || 'avant', // Prise en compte de la phase (avant/apres)
         }))
       )
     if (insertErr) {

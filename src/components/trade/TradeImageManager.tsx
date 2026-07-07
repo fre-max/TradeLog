@@ -143,6 +143,7 @@ export function TradeImageManager({ images, onChange }: TradeImageManagerProps) 
                         <img 
                           src={currentImg.url} 
                           alt={`${phaseGroup.label} ${ctx.label}`}
+                          loading="lazy"
                           className="w-full h-full object-cover bg-black/10"
                         />
                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

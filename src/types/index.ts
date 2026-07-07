@@ -98,8 +98,22 @@ export const ComboMemorySchema = z.object({
 
 export type ComboMemory = z.infer<typeof ComboMemorySchema>
 
+export interface StepImage {
+  id: string
+  step_id: string
+  url: string
+  source: 'telegram' | 'upload' | 'url'
+  storage_path: string | null
+  created_at: string
+  phase?: 'avant' | 'apres'
+}
+
+export type StepWithImages = Step & {
+  images?: StepImage[]
+}
+
 export type TradeWithSteps = Trade & {
-  steps: Step[]
+  steps: StepWithImages[]
   images?: TradeImage[]
 }
 
@@ -119,8 +133,10 @@ export const ReasonFamilySchema = z.object({
   created_at: z.string(),
 })
 
+export type ReasonType = 'biais' | 'poi' | 'entry' | 'sl' | 'tp' | 'trailing' | 'confirmation'
+
 export type ReasonFamily = z.infer<typeof ReasonFamilySchema>
-export type ReasonFamilyInsert = Omit<ReasonFamily, 'id' | 'created_at'>
+export type ReasonFamilyInsert = Omit<ReasonFamily, 'id' | 'created_at' | 'user_id' | 'order'> & { order?: number }
 
 // Schéma et type pour une variante de raison (ex: mineur, moyen, grand)
 export const ReasonVariantSchema = z.object({
@@ -147,6 +163,7 @@ export const ReasonCatalogSchema = z.object({
 
 export type ReasonCatalogItem = z.infer<typeof ReasonCatalogSchema> & {
   variants: ReasonVariant[]
+  type?: string
 }
 export type ReasonCatalogInsert = Omit<z.infer<typeof ReasonCatalogSchema>, 'id' | 'user_id' | 'created_at'>
 

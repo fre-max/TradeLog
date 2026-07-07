@@ -13,6 +13,7 @@ import {
   useReasonFamilies,
   useCreateReasonFamily,
   useDeleteReasonFamily,
+  useUpdateReasonFamily,
 } from '@/hooks/useReasonFamilies'
 import type { ReasonCatalogItem, ReasonVariant } from '@/types'
 import { cn } from '@/lib/utils'
@@ -28,6 +29,7 @@ export default function Catalog() {
   const { mutateAsync: deleteItem } = useDeleteCatalogItem()
   const { mutateAsync: createFamily } = useCreateReasonFamily()
   const { mutateAsync: deleteFamily } = useDeleteReasonFamily()
+  const { mutateAsync: updateFamily } = useUpdateReasonFamily()
   
   const addToast = useUIStore((state) => state.addToast)
 
@@ -40,9 +42,12 @@ export default function Catalog() {
   const [editingItem, setEditingItem] = useState<ReasonCatalogItem | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
 
-  // Modal Famille
+  // Modal Famille (Création & Modification)
   const [isFamilyFormOpen, setIsFamilyFormOpen] = useState(false)
   const [newFamilyName, setNewFamilyName] = useState('')
+  const [isFamilyEditOpen, setIsFamilyEditOpen] = useState(false)
+  const [editingFamilyId, setEditingFamilyId] = useState<string | null>(null)
+  const [editingFamilyName, setEditingFamilyName] = useState('')
 
   // État du formulaire Concept
   const [formTitle, setFormTitle] = useState('')
@@ -54,6 +59,35 @@ export default function Catalog() {
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
 
   // ─── GESTION DES FAMILLES ─────────────────────────────────────────────
+  
+  // Ouvre le formulaire d'édition de la famille avec les valeurs existantes
+  const handleEditFamily = (id: string, name: string) => {
+    setEditingFamilyId(id)
+    setEditingFamilyName(name)
+    setIsFamilyEditOpen(true)
+  }
+
+  // Met à jour la famille en BDD et synchronise l'affichage
+  const handleUpdateFamily = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingFamilyId || !editingFamilyName.trim()) return
+
+    setSaving(true)
+    try {
+      console.log('🚀 [Catalog] Modification de la famille ID:', editingFamilyId)
+      await updateFamily({ id: editingFamilyId, name: editingFamilyName.trim() })
+      addToast('Famille modifiée avec succès !', 'success')
+      setIsFamilyEditOpen(false)
+      setEditingFamilyId(null)
+      setEditingFamilyName('')
+    } catch (e) {
+      console.error('❌ [Catalog] Erreur lors de la modification:', e)
+      addToast('Erreur lors de la modification de la famille', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSaveFamily = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newFamilyName.trim()) return
@@ -260,11 +294,11 @@ export default function Catalog() {
             {families?.map((fam) => {
               const count = catalogItems?.filter((x) => x.family_id === fam.id).length || 0
               return (
-                <div key={fam.id} className="group relative flex items-center">
+                <div key={fam.id} className="group relative flex items-center pr-2">
                   <button
                     onClick={() => setSelectedFamilyId(fam.id)}
                     className={cn(
-                      'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap',
+                      'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap mr-3',
                       selectedFamilyId === fam.id
                         ? 'bg-accent/10 border-accent/25 text-accent font-semibold'
                         : 'bg-transparent border-transparent text-txt2 hover:bg-surface2 hover:text-txt'
@@ -273,13 +307,22 @@ export default function Catalog() {
                     {fam.name} ({count})
                   </button>
                   {selectedFamilyId === fam.id && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteFamily(fam.id); }}
-                      className="absolute -top-1 -right-1 bg-loss text-white rounded-full w-4 h-4 text-[8px] flex items-center justify-center hover:scale-110 transition-transform"
-                      title="Supprimer la famille"
-                    >
-                      ✕
-                    </button>
+                    <div className="absolute top-0 right-0 flex gap-0.5 z-[5]">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleEditFamily(fam.id, fam.name); }}
+                        className="bg-accent text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center hover:scale-110 transition-transform shadow"
+                        title="Modifier la famille"
+                      >
+                        ✏️
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDeleteFamily(fam.id); }}
+                        className="bg-loss text-white rounded-full w-4 h-4 text-[8px] flex items-center justify-center hover:scale-110 transition-transform shadow"
+                        title="Supprimer la famille"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   )}
                 </div>
               )
@@ -369,6 +412,29 @@ export default function Catalog() {
                 />
                 <div className="flex justify-end gap-2">
                   <button type="button" onClick={() => setIsFamilyFormOpen(false)} className="px-3 py-1.5 text-xs text-txt3 hover:text-txt">Annuler</button>
+                  <button type="submit" disabled={saving} className="px-3 py-1.5 bg-accent text-white rounded text-xs font-semibold">Sauvegarder</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ─── MODAL MODIFICATION FAMILLE ─────────────────────────────────── */}
+        {isFamilyEditOpen && (
+          <div className="fixed inset-0 bg-black/75 z-[200] flex items-center justify-center p-4">
+            <div className="bg-surface border border-border w-full max-w-sm rounded-xl p-5 shadow-2xl">
+              <h2 className="text-sm font-semibold mb-4 text-txt">Modifier la Famille</h2>
+              <form onSubmit={handleUpdateFamily}>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Ex: Vitesse, Contexte, Biais..."
+                  value={editingFamilyName}
+                  onChange={(e) => setEditingFamilyName(e.target.value)}
+                  className="w-full bg-bg border border-border2 rounded-lg px-3 py-2 text-sm text-txt mb-4 outline-none focus:border-accent"
+                />
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => { setIsFamilyEditOpen(false); setEditingFamilyId(null); }} className="px-3 py-1.5 text-xs text-txt3 hover:text-txt">Annuler</button>
                   <button type="submit" disabled={saving} className="px-3 py-1.5 bg-accent text-white rounded text-xs font-semibold">Sauvegarder</button>
                 </div>
               </form>

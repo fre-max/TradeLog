@@ -1,4 +1,4 @@
-import type { TradeWithSteps } from '@/types'
+import type { TradeWithSteps, StepWithImages } from '@/types'
 import type { GeminiAnalysis } from '@/hooks/useQuickEntry'
 
 export const INITIAL_FORM_STATE = {
@@ -39,11 +39,11 @@ export const INITIAL_FORM_STATE = {
   missed_gap: '',
   missed_reason: '',
 
-  // Listes d'images associées à chaque étape du formulaire
-  biais_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
-  poi_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
-  entry_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
-  result_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url' }[],
+  // Listes d'images associées à chaque étape du formulaire avec leur phase (avant/apres)
+  biais_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
+  poi_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
+  entry_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
+  result_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
 
   // Raisons techniques issues du catalogue (liées aux étapes)
   biais_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
@@ -75,10 +75,10 @@ function numStr(v: unknown): string {
 
 /** Convertit un trade BDD en état de formulaire (création ou édition). */
 export function tradeToFormData(trade: TradeWithSteps): FormDataState {
-  const biais = trade.steps.find((s) => s.type === 'biais')
-  const poi = trade.steps.find((s) => s.type === 'poi')
-  const entry = trade.steps.find((s) => s.type === 'entry')
-  const review = trade.steps.find((s) => s.type === 'result')
+  const biais = trade.steps.find((s) => s.type === 'biais') as StepWithImages | undefined
+  const poi = trade.steps.find((s) => s.type === 'poi') as StepWithImages | undefined
+  const entry = trade.steps.find((s) => s.type === 'entry') as StepWithImages | undefined
+  const review = trade.steps.find((s) => s.type === 'result') as StepWithImages | undefined
 
   const biaisFields = (biais?.fields ?? {}) as Record<string, unknown>
   const poiFields = (poi?.fields ?? {}) as Record<string, unknown>
@@ -124,11 +124,11 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
     missed_gap: numStr(reviewFields.missed_gap),
     missed_reason: str(reviewFields.missed_reason),
 
-    // Listes d'images par étape
-    biais_images: biais?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
-    poi_images: poi?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
-    entry_images: entry?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
-    result_images: review?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any })) ?? [],
+    // Listes d'images par étape avec récupération de la phase
+    biais_images: biais?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
+    poi_images: poi?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
+    entry_images: entry?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
+    result_images: review?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
 
     // Extractions des raisons du catalogue depuis les JSONB des étapes
     biais_catalog_reasons: ((biaisFields.catalog_reasons ?? []) as any[]).map(r => ({

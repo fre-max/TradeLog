@@ -215,7 +215,7 @@ export function ImageAnalysisUpload({ onAnalysisComplete, onManualMode }: ImageA
       ) : (
         <div className="border border-border2 rounded-xl overflow-hidden bg-surface2">
           <div className="relative h-40 bg-black/20 flex items-center justify-center overflow-hidden">
-            <img src={preview} alt="Dernière Telegram" className="w-full h-full object-cover" />
+            <img src={preview} alt="Dernière Telegram" className="w-full h-full object-cover" loading="lazy" />
             <div className="absolute top-2 right-2 bg-accent text-white px-2 py-0.5 rounded text-[11px] font-semibold">
               Telegram
             </div>

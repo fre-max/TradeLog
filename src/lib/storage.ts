@@ -2,13 +2,94 @@ import { supabase } from './supabase'
 
 const BUCKET = 'trade-images'
 
+/**
+ * Compresse une image côté client (format JPEG, max 1600px, qualité 80 %)
+ * pour réduire la taille des fichiers de ~90% sans perdre en lisibilité.
+ * 
+ * Exemple :
+ * const blobCompresse = await compresserImage(monFichierImage);
+ */
+export async function compresserImage(fileOrBlob: File | Blob): Promise<Blob> {
+  // Ignorer la compression si ce n'est pas une image ou si c'est un format animé/vectoriel
+  if (!fileOrBlob.type.startsWith('image/') || fileOrBlob.type === 'image/svg+xml' || fileOrBlob.type === 'image/gif') {
+    return fileOrBlob
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        const MAX_WIDTH = 1600
+        const MAX_HEIGHT = 1600
+        let width = img.width
+        let height = img.height
+
+        // Calcul des dimensions en préservant le ratio d'aspect
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width)
+            width = MAX_WIDTH
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height)
+            height = MAX_HEIGHT
+          }
+        }
+
+        // Création du canvas pour le redimensionnement
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          console.warn('⚠️ [Storage] Canvas 2D non supporté, envoi du fichier original')
+          resolve(fileOrBlob)
+          return
+        }
+
+        ctx.drawImage(img, 0, 0, width, height)
+
+        // Compression JPEG qualité 80% (200-300ko de moyenne)
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob)
+            } else {
+              resolve(fileOrBlob)
+            }
+          },
+          'image/jpeg',
+          0.8
+        )
+      }
+      img.onerror = () => resolve(fileOrBlob)
+      img.src = event.target?.result as string
+    }
+    reader.onerror = () => resolve(fileOrBlob)
+    reader.readAsDataURL(fileOrBlob)
+  })
+}
+
 export async function uploadImage(
   file: File | Blob,
   path: string
 ): Promise<string> {
+  console.log('🚀 [Storage] Début upload image, taille originale :', file.size, 'octets')
+
+  let fichierAEnvoyer = file
+  try {
+    fichierAEnvoyer = await compresserImage(file)
+    console.log('✅ [Storage] Image compressée avec succès, nouvelle taille :', fichierAEnvoyer.size, 'octets')
+  } catch (err) {
+    console.error('❌ [Storage] Échec de la compression client, envoi du fichier brut :', err)
+  }
+
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(path, file, { upsert: true })
+    .upload(path, fichierAEnvoyer, { upsert: true })
 
   if (error) throw error
 

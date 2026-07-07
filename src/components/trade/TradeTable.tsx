@@ -3,6 +3,7 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  getPaginationRowModel,
   flexRender,
   createColumnHelper,
   type SortingState,
@@ -349,6 +350,12 @@ export function TradeTable() {
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 25, // Limite à 25 trades par page pour le mobile et les performances
+      },
+    },
   })
 
   return (
@@ -418,6 +425,49 @@ export function TradeTable() {
             ))}
           </tbody>
         </table>
+
+        {/* Contrôles de pagination */}
+        {!isLoading && filtered.length > 0 && (
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-3 px-4 py-3 border-t border-border bg-surface2/10 text-xs">
+            <div className="text-txt3">
+              Affichage de{' '}
+              <span className="font-semibold text-txt2">
+                {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
+              </span>{' '}
+              à{' '}
+              <span className="font-semibold text-txt2">
+                {Math.min(
+                  (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+                  filtered.length
+                )}
+              </span>{' '}
+              sur <span className="font-semibold text-txt">{filtered.length}</span> trades
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+                className="px-2.5 py-1.5 bg-surface border border-border rounded text-txt2 disabled:opacity-40 hover:text-txt transition-colors text-[11px] font-medium"
+              >
+                ◀ Précédent
+              </button>
+              <span className="text-txt3">
+                Page <span className="font-semibold text-txt2">{table.getState().pagination.pageIndex + 1}</span> sur{' '}
+                <span className="font-semibold text-txt2">{table.getPageCount()}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+                className="px-2.5 py-1.5 bg-surface border border-border rounded text-txt2 disabled:opacity-40 hover:text-txt transition-colors text-[11px] font-medium"
+              >
+                Suivant ▶
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Empty state enrichi — quand 0 trades après chargement */}
         {!isLoading && filtered.length === 0 && (

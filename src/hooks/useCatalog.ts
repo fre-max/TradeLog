@@ -16,11 +16,12 @@ export function useCatalog() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: async (): Promise<ReasonCatalogItem[]> => {
-      // Récupère les raisons triées par date de création, avec leurs variantes
+      // Récupère les raisons triées par date de création, avec leurs variantes et leur famille associée
       const { data, error } = await supabase
         .from('reason_catalog')
         .select(`
           *,
+          family: reason_families (id, name),
           variants: reason_variants (*)
         `)
         .order('created_at', { ascending: false })
@@ -29,7 +30,26 @@ export function useCatalog() {
         console.error('❌ [useCatalog] Erreur lors de la récupération du catalogue:', error)
         throw error
       }
-      return data as ReasonCatalogItem[]
+
+      // Injecte dynamiquement la propriété type sur les raisons à partir du nom de leur famille
+      const itemsAvecType = (data || []).map((item: any) => {
+        const familyName = (item.family?.name || '').toLowerCase()
+        let type = 'confirmation'
+
+        if (familyName.includes('biais')) type = 'biais'
+        else if (familyName.includes('poi') || familyName.includes('zone')) type = 'poi'
+        else if (familyName.includes('sl') || familyName.includes('stop loss') || familyName.includes('loss')) type = 'sl'
+        else if (familyName.includes('tp') || familyName.includes('take profit') || familyName.includes('profit')) type = 'tp'
+        else if (familyName.includes('trailing')) type = 'trailing'
+        else if (familyName.includes('entr') || familyName.includes('setup')) type = 'entry'
+
+        return {
+          ...item,
+          type,
+        }
+      })
+
+      return itemsAvecType as ReasonCatalogItem[]
     },
   })
 }

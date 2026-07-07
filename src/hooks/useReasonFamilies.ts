@@ -72,3 +72,29 @@ export function useDeleteReasonFamily() {
     },
   })
 }
+
+/**
+ * Met à jour le nom d'une famille
+ * 
+ * Exemple :
+ * const { mutate: renommerFamille } = useUpdateReasonFamily()
+ * renommerFamille({ id: '123', name: 'Nouveau Nom' })
+ */
+export function useUpdateReasonFamily() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      console.log('🚀 [useUpdateReasonFamily] Modification de la famille:', id, '->', name)
+      const { error } = await supabase
+        .from('reason_families')
+        .update({ name })
+        .eq('id', id)
+
+      if (error) throw error
+      console.log('✅ [useUpdateReasonFamily] Succès')
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: QUERY_KEY }),
+  })
+}
+

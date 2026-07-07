@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import type { TradeWithSteps } from '@/types'
+import type { TradeWithSteps, StepWithImages } from '@/types'
 
 // ─── Constantes de mise en page ──────────────────────────────────────────────
 
@@ -33,10 +33,10 @@ export async function exportPdf(trade: TradeWithSteps) {
 
   // ─── 2️⃣ Sections analytiques ─────────────────────────────────────────────
 
-  const biais  = trade.steps.find((s) => s.type === 'biais')
-  const poi    = trade.steps.find((s) => s.type === 'poi')
-  const entry  = trade.steps.find((s) => s.type === 'entry')
-  const review = trade.steps.find((s) => s.type === 'result')
+  const biais  = trade.steps.find((s) => s.type === 'biais') as StepWithImages | undefined
+  const poi    = trade.steps.find((s) => s.type === 'poi') as StepWithImages | undefined
+  const entry  = trade.steps.find((s) => s.type === 'entry') as StepWithImages | undefined
+  const review = trade.steps.find((s) => s.type === 'result') as StepWithImages | undefined
 
   // Section Biais
   if (biais) {

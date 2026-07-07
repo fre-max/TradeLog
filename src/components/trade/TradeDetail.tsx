@@ -241,7 +241,7 @@ export function TradeDetail() {
             {biais && (
               <Section title="🧭 Biais" badge={biais.timeframe ?? undefined}>
                 <p className="text-txt2 text-[13.5px] leading-relaxed mb-3">{biais.notes ?? '—'}</p>
-                <Thumbnails images={biais.images} onOpen={setLightbox} />
+                <Thumbnails images={biais.images || []} onOpen={setLightbox} />
               </Section>
             )}
 
@@ -249,7 +249,7 @@ export function TradeDetail() {
             {poi && (
               <Section title="🎯 POI / Zone" badge={poi.timeframe ?? undefined}>
                 <p className="text-txt2 text-[13.5px] leading-relaxed mb-3">{poi.notes ?? '—'}</p>
-                <Thumbnails images={poi.images} onOpen={setLightbox} />
+                <Thumbnails images={poi.images || []} onOpen={setLightbox} />
               </Section>
             )}
 
@@ -263,7 +263,7 @@ export function TradeDetail() {
                   <Info label="Take Profit" value={(entry.fields as any)?.tp != null ? String((entry.fields as any).tp) : '—'} />
                 </div>
                 <p className="text-txt2 text-[13.5px] leading-relaxed mb-3">{entry.notes ?? '—'}</p>
-                <Thumbnails images={entry.images} onOpen={setLightbox} />
+                <Thumbnails images={entry.images || []} onOpen={setLightbox} />
               </Section>
             )}
 
@@ -299,7 +299,7 @@ export function TradeDetail() {
                   {review.images && review.images.length > 0 && (
                     <div className="mt-3">
                       <p className="text-txt3 text-[10px] font-semibold uppercase tracking-wider mb-2">🖼 Graphique de fin / Résultat</p>
-                      <Thumbnails images={review.images} onOpen={setLightbox} />
+                      <Thumbnails images={review.images || []} onOpen={setLightbox} />
                     </div>
                   )}
                 </div>
@@ -404,7 +404,7 @@ function Thumbnails({ images, onOpen }: { images: StepImageLike[]; onOpen: (url:
             className="w-28 h-20 bg-bg border border-border2 rounded-md overflow-hidden flex items-center justify-center hover:border-accent transition-colors flex-shrink-0"
           >
             {src ? (
-              <img src={src} alt={`chart-${i}`} className="w-full h-full object-cover" />
+              <img src={src} alt={`chart-${i}`} className="w-full h-full object-cover" loading="lazy" />
             ) : (
               <div className="text-center text-txt3 text-xs"><div className="text-2xl">🖼</div>Chart</div>
             )}

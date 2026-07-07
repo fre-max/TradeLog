@@ -47,6 +47,30 @@ export function TradeDrawer() {
   const [saving, setSaving] = useState(false)
   const [manualMode, setManualMode] = useState(false)
   const [showImagesImport, setShowImagesImport] = useState(false)
+  const [analysantIA, setAnalysantIA] = useState(false)
+  const [showRappelDialog, setShowRappelDialog] = useState(false)
+
+  // Extrait toutes les images actuellement insérées dans les différentes étapes du formulaire
+  const toutesLesImages = useMemo(() => {
+    return [
+      ...(formData.biais_images || []),
+      ...(formData.poi_images || []),
+      ...(formData.entry_images || []),
+      ...(formData.result_images || []),
+    ]
+  }, [formData.biais_images, formData.poi_images, formData.entry_images, formData.result_images])
+
+  // Détermine si le trade possède toujours ses données par défaut
+  const aDesDonneesParDefaut = useMemo(() => {
+    return (
+      formData.pair === INITIAL_FORM_STATE.pair &&
+      formData.direction === INITIAL_FORM_STATE.direction &&
+      formData.session === INITIAL_FORM_STATE.session &&
+      formData.rr_planned === INITIAL_FORM_STATE.rr_planned &&
+      formData.rr_realized === INITIAL_FORM_STATE.rr_realized &&
+      formData.result === INITIAL_FORM_STATE.result
+    )
+  }, [formData])
 
   const brouillons = useBrouillonStore((state) => state.brouillons)
   const brouillonsImages = brouillons.filter(b => b.sections.images && b.sections.images.length > 0)
@@ -160,7 +184,59 @@ export function TradeDrawer() {
     closeNewTrade()
   }
 
-  const handleSave = async () => {
+  // Analyse une image sélectionnée dans le Drawer pour pré-remplir le formulaire
+  const analyserImageSelectionnee = async (url: string) => {
+    setAnalysantIA(true)
+    console.log("🚀 [TradeDrawer] Lancement de l'analyse IA sur l'image :", url)
+    try {
+      const response = await supabase.functions.invoke('analyze', {
+        body: {
+          url,
+          mode: 'setup'
+        }
+      })
+
+      if (response.error) throw response.error
+
+      const res = response.data
+      console.log('✅ [TradeDrawer] Analyse IA terminée. Résultats :', res)
+
+      // Remplir les champs du formulaire avec les données extraites
+      setFormData((prev) => ({
+        ...prev,
+        pair: res.pair || prev.pair,
+        direction: (res.direction || prev.direction) as 'long' | 'short',
+        session: res.session || prev.session,
+        entry_price: res.entry_price ? String(res.entry_price) : prev.entry_price,
+        entry_sl: res.sl ? String(res.sl) : prev.entry_sl,
+        entry_tp: res.tp ? String(res.tp) : prev.entry_tp,
+        rr_planned: res.rr ? String(res.rr) : prev.rr_planned,
+        rr_realized: res.rr_realized != null ? String(res.rr_realized) : prev.rr_realized,
+        result: res.result || prev.result,
+        exit_type: res.result === 'win' ? 'tp' : (res.result === 'loss' ? 'sl' : (res.result === 'breakeven' ? 'breakeven' : prev.exit_type)),
+        biais_timeframe: res.timeframe || prev.biais_timeframe,
+        poi_timeframe: res.timeframe || prev.poi_timeframe,
+        entry_timeframe: res.timeframe || prev.entry_timeframe,
+      }))
+
+      addToast("Données du trade pré-remplies par l'IA !", "success")
+    } catch (e: any) {
+      console.error("❌ [TradeDrawer] Échec de l'analyse IA :", e)
+      addToast(e.message || "Erreur lors de l'analyse par l'IA.", "error")
+    } finally {
+      setAnalysantIA(false)
+    }
+  }
+
+  const handleSave = async (forceSave = false) => {
+    // Si l'utilisateur enregistre un nouveau trade avec des valeurs par défaut alors qu'il a des captures non analysées
+    if (!forceSave && !isEditMode && aDesDonneesParDefaut && toutesLesImages.length > 0) {
+      console.log("⚠️ [TradeDrawer] Données par défaut détectées, affichage du rappel.")
+      setShowRappelDialog(true)
+      return
+    }
+
+    setShowRappelDialog(false)
     setSaving(true)
 
     try {
@@ -305,47 +381,6 @@ export function TradeDrawer() {
 
             return (
               <div className="flex flex-col">
-                <div className="border-b border-border">
-                  <div className="flex items-center justify-between px-5 pt-4 pb-2">
-                    <h3 className="text-[13px] font-semibold text-txt uppercase tracking-wider">🖼️ Images (Avant/Après)</h3>
-                    {brouillonsImages.length > 0 && (
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setShowImagesImport(!showImagesImport)}
-                          className="text-[11px] px-2 py-1 bg-[#7c3aed]/10 text-[#7c3aed] border border-[#7c3aed]/25 rounded-md hover:bg-[#7c3aed]/20 transition-colors font-medium"
-                        >
-                          💾 Importer
-                        </button>
-                        {showImagesImport && (
-                          <>
-                            <div className="fixed inset-0 z-[5]" onClick={() => setShowImagesImport(false)} />
-                            <div className="absolute right-0 top-full mt-1 bg-surface border border-border rounded-lg shadow-xl z-[10] min-w-[160px] overflow-hidden">
-                              <p className="text-txt3 text-[10px] px-3 py-1.5 border-b border-border uppercase tracking-wider">Choisir un brouillon</p>
-                              {brouillonsImages.map((b) => (
-                                <button
-                                  key={b.id}
-                                  type="button"
-                                  onClick={() => {
-                                    if (b.sections.images) setTradeImages(b.sections.images)
-                                    setShowImagesImport(false)
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-[12.5px] text-txt hover:bg-accent/8 transition-colors flex items-center gap-2"
-                                >
-                                  <span className="w-5 h-5 rounded-full bg-[#7c3aed]/15 text-[#7c3aed] flex items-center justify-center text-[10px] font-bold">{b.id}</span>
-                                  Brouillon {b.id}
-                                </button>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-5 pt-2">
-                    <TradeImageManager images={tradeImages} onChange={setTradeImages} />
-                  </div>
-                </div>
                 {stepsAffichees.map((step, index) => (
                   <StepBlock
                     key={step.id}
@@ -368,23 +403,115 @@ export function TradeDrawer() {
         </div>
 
         {(isEditMode || manualMode) && (
-          <div className="flex justify-end gap-2.5 px-5 py-4 border-t border-border flex-shrink-0">
-            <button
-              onClick={() => {
-                if (!enCours) resetAndClose()
-              }}
-              disabled={enCours}
-              className="px-4 py-2 border border-border2 rounded-md text-txt2 text-[13px] font-medium hover:bg-surface2 hover:text-txt transition-colors disabled:opacity-50"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={enCours}
-              className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {enCours ? 'Enregistrement...' : isEditMode ? 'Mettre à jour' : 'Enregistrer'}
-            </button>
+          <div className="flex flex-col border-t border-border flex-shrink-0 bg-surface">
+            {/* Zone d'assistant IA rapide si des images existent dans le formulaire */}
+            {toutesLesImages.length > 0 && (
+              <div className="px-5 pt-3.5 pb-2.5 bg-bg/25 border-b border-border/40">
+                <p className="text-[11px] text-txt3 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <span>🔮 Assistant IA (Remplissage rapide) :</span>
+                  {analysantIA && (
+                    <span className="flex items-center gap-1.5 text-[10px] text-accent normal-case font-normal animate-pulse">
+                      <span className="w-2.5 h-2.5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                      Analyse en cours...
+                    </span>
+                  )}
+                </p>
+                <div className="flex gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin">
+                  {toutesLesImages.map((img, idx) => (
+                    <button
+                      key={img.id || idx}
+                      type="button"
+                      disabled={analysantIA}
+                      onClick={() => analyserImageSelectionnee(img.url)}
+                      className={cn(
+                        "relative w-20 aspect-video rounded border border-border2 overflow-hidden hover:border-accent hover:scale-105 transition-all flex-shrink-0 bg-surface2 disabled:opacity-50",
+                        analysantIA && "cursor-not-allowed"
+                      )}
+                      title="Cliquer pour lancer l'analyse Gemini Vision sur cette capture"
+                    >
+                      <img src={img.url} className="w-full h-full object-cover" alt="Capture à analyser" loading="lazy" />
+                      <div className="absolute inset-0 bg-black/40 hover:bg-black/15 transition-colors flex items-center justify-center">
+                        <span className="text-[9px] text-white font-bold">🔮 Analyser</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Boutons d'action principaux */}
+            <div className="flex justify-end gap-2.5 px-5 py-4">
+              <button
+                onClick={() => {
+                  if (!enCours) resetAndClose()
+                }}
+                disabled={enCours}
+                className="px-4 py-2 border border-border2 rounded-md text-txt2 text-[13px] font-medium hover:bg-surface2 hover:text-txt transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => handleSave(false)}
+                disabled={enCours}
+                className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {enCours ? 'Enregistrement...' : isEditMode ? 'Mettre à jour' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Dialogue de rappel anti-oubli */}
+        {showRappelDialog && (
+          <div className="absolute inset-0 bg-black/85 z-[150] flex items-center justify-center p-6 animate-fadeIn animate-duration-200">
+            <div className="bg-surface border border-border rounded-xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
+              <div className="text-center space-y-2">
+                <span className="text-3xl">⚠️</span>
+                <h3 className="text-txt font-semibold text-sm">Données non complétées</h3>
+                <p className="text-txt3 text-xs leading-relaxed">
+                  Tu t'apprêtes à enregistrer ce trade avec les valeurs par défaut. Souhaites-tu d'abord utiliser l'IA sur l'une de tes captures pour extraire automatiquement les données (paire, direction, R:R) ?
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-[10px] text-txt3 font-bold uppercase tracking-wider text-center">Choisir la capture à analyser :</p>
+                <div className="flex gap-2 justify-center overflow-x-auto py-1 scrollbar-thin">
+                  {toutesLesImages.map((img, idx) => (
+                    <button
+                      key={img.id || idx}
+                      type="button"
+                      onClick={() => {
+                        setShowRappelDialog(false)
+                        analyserImageSelectionnee(img.url)
+                      }}
+                      className="relative w-16 aspect-video rounded border border-border2 overflow-hidden hover:border-accent hover:scale-105 transition-all flex-shrink-0 bg-surface2"
+                    >
+                      <img src={img.url} className="w-full h-full object-cover" alt="Image" loading="lazy" />
+                      <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
+                        <span className="text-[9px] text-white font-bold">🔮 Lancer</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2 border-t border-border/40">
+                <button
+                  type="button"
+                  onClick={() => handleSave(true)}
+                  className="w-full py-2 bg-surface2 border border-border2 text-txt hover:bg-surface transition-colors rounded-md text-xs font-semibold text-center"
+                >
+                  💾 Enregistrer sans l'IA
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRappelDialog(false)}
+                  className="w-full py-2 text-txt3 hover:text-txt hover:underline transition-colors text-xs text-center font-medium"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </aside>
