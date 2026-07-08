@@ -1,5 +1,7 @@
--- 1. Ajoute la colonne phase à la table step_images pour gérer les captures Avant et Après par étape
-ALTER TABLE step_images ADD COLUMN IF NOT EXISTS phase text CHECK (phase IN ('avant', 'apres')) DEFAULT 'avant';
+-- ⚠️ MIGRATION OBSOLÈTE — NE PAS EXÉCUTER
+-- Cette migration est désormais inutile car la colonne 'phase' a été intégrée
+-- directement dans la table 'trade_images' lors de sa création (trade_images.sql).
+-- La table 'step_images' n'existe plus — elle a été remplacée par 'trade_images'.
+--
+-- Migration concernée : trade_images.sql (déjà exécuté sur Supabase)
 
--- 2. Pour les images existantes, elles sont considérées comme "avant" par défaut
-UPDATE step_images SET phase = 'avant' WHERE phase IS NULL;

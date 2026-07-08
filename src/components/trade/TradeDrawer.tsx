@@ -1,19 +1,17 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useUIStore } from '@/store'
 import { cn } from '@/lib/utils'
-import { StepBlock } from './StepBlock'
 import { supabase } from '@/lib/supabase'
 import { useUpdateTrade } from '@/hooks/useTrades'
 import { useQuickEntry } from '@/hooks/useQuickEntry'
 import { ImageAnalysisUpload } from './ImageAnalysisUpload'
-import { useBrouillonStore } from '@/store/brouillonStore'
-import type { Brouillon } from '@/store/brouillonStore'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTradeReasons, useSaveTradeReasons, type SelectedTradeReason } from '@/hooks/useTradeReasons'
 import { useTradeImages, useSaveTradeImages } from '@/hooks/useTradeImages'
-import { TradeImageManager } from './TradeImageManager'
-import type { TradeImage } from '@/types'
-import { useParams } from 'react-router-dom'
+import { TradeTypeSelector } from './TradeTypeSelector'
+import { GlobalInfosPanel } from './GlobalInfosPanel'
+import { TradeSectionPanel } from './TradeSectionPanel'
+import { IAAnalysisPanel } from './IAAnalysisPanel'
 import {
   buildStepPayloads,
   buildTradePayload,
@@ -40,46 +38,20 @@ export function TradeDrawer() {
   const { mutateAsync: creerQuickEntry, isPending: isCreatingQuick } = useQuickEntry()
   const queryClient = useQueryClient()
 
+  // États du formulaire
   const [formData, setFormData] = useState<FormDataState>(INITIAL_FORM_STATE)
   const [stepIds, setStepIds] = useState<EditStepIds>({})
-  // Les raisons sélectionnées : tableau d'objets { reason_id, variant_name }
   const [selectedReasons, setSelectedReasons] = useState<SelectedTradeReason[]>([])
-  const [tradeImages, setTradeImages] = useState<Partial<TradeImage>[]>([])
   const [saving, setSaving] = useState(false)
+
+  // Contrôles de navigation et d'étapes dans le Drawer
   const [manualMode, setManualMode] = useState(false)
-  const [showImagesImport, setShowImagesImport] = useState(false)
+  const [selectedStartType, setSelectedStartType] = useState<'bias' | 'poi' | 'confirmation' | null>(null)
   const [analysantIA, setAnalysantIA] = useState(false)
+  const [globalInfosParDefaut, setGlobalInfosParDefaut] = useState(true)
   const [showRappelDialog, setShowRappelDialog] = useState(false)
 
-  // Extrait toutes les images actuellement insérées dans les différentes étapes du formulaire
-  const toutesLesImages = useMemo(() => {
-    return [
-      ...(formData.biais_images || []),
-      ...(formData.poi_images || []),
-      ...(formData.entry_images || []),
-      ...(formData.result_images || []),
-    ]
-  }, [formData.biais_images, formData.poi_images, formData.entry_images, formData.result_images])
-
-  // Détermine si le trade possède toujours ses données par défaut
-  const aDesDonneesParDefaut = useMemo(() => {
-    return (
-      formData.pair === INITIAL_FORM_STATE.pair &&
-      formData.direction === INITIAL_FORM_STATE.direction &&
-      formData.session === INITIAL_FORM_STATE.session &&
-      formData.rr_planned === INITIAL_FORM_STATE.rr_planned &&
-      formData.rr_realized === INITIAL_FORM_STATE.rr_realized &&
-      formData.result === INITIAL_FORM_STATE.result
-    )
-  }, [formData])
-
-  const brouillons = useBrouillonStore((state) => state.brouillons)
-  const brouillonsImages = brouillons.filter(b => b.sections.images && b.sections.images.length > 0)
-
-  const { mutateAsync: saveTradeReasons } = useSaveTradeReasons()
-  const { mutateAsync: saveTradeImages } = useSaveTradeImages()
-
-  // UUIDs générés côté client pour l'insertion des nouveaux trades et de leurs étapes
+  // UUIDs temporaires pour la création d'un nouveau trade et de ses étapes
   const [tempIds, setTempIds] = useState(() => ({
     tradeId: crypto.randomUUID(),
     biais: crypto.randomUUID(),
@@ -87,85 +59,59 @@ export function TradeDrawer() {
     entry: crypto.randomUUID(),
     result: crypto.randomUUID(),
   }))
-  const { type } = useParams<{ type: string }>()
-  const currentJournalType = (type || 'global') as 'global' | 'bias' | 'poi' | 'confirmation'
-
-  // Sélection dynamique des étapes du formulaire selon le type de journal choisi dans le formulaire
-  const stepsAffichees = useMemo(() => {
-    const typeJournal = formData.journal_type || 'global'
-    
-    if (typeJournal === 'bias') {
-      return [
-        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
-        { id: 'step-1', title: 'Infos générales (Biais)', type: 'general' as const },
-        { id: 'step-2', title: 'Biais HTF', type: 'biais' as const },
-        { id: 'step-5', title: 'Résultat & Revue Biais', type: 'result' as const },
-      ]
-    }
-    
-    if (typeJournal === 'poi') {
-      return [
-        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
-        { id: 'step-1', title: 'Infos générales (POI)', type: 'general' as const },
-        { id: 'step-2', title: 'Biais (Contexte)', type: 'biais' as const },
-        { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
-        { id: 'step-5', title: 'Résultat POI', type: 'result' as const },
-      ]
-    }
-    
-    if (typeJournal === 'confirmation') {
-      return [
-        { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
-        { id: 'step-1', title: 'Infos générales (Confirmation)', type: 'general' as const },
-        { id: 'step-3', title: 'Zone POI (Contexte)', type: 'poi' as const },
-        { id: 'step-4', title: 'Entrée (Confirmation LTF)', type: 'entry' as const },
-        { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
-      ]
-    }
-    
-    // Par défaut (global) : affichage de toutes les étapes
-    return [
-      { id: 'step-reasons', title: 'Raisons du Trade', type: 'reasons' as const },
-      { id: 'step-1', title: 'Infos générales', type: 'general' as const },
-      { id: 'step-2', title: 'Biais', type: 'biais' as const },
-      { id: 'step-3', title: 'POI / Zone', type: 'poi' as const },
-      { id: 'step-4', title: 'Entrée', type: 'entry' as const },
-      { id: 'step-5', title: 'Résultat & Review', type: 'result' as const },
-    ]
-  }, [formData.journal_type])
 
   const { data: existingReasons } = useTradeReasons(isEditMode ? editingTrade?.id : undefined)
   const { data: existingImages } = useTradeImages(isEditMode ? editingTrade?.id : undefined)
 
+  const { mutateAsync: saveTradeReasons } = useSaveTradeReasons()
+  const { mutateAsync: saveTradeImages } = useSaveTradeImages()
+
+  // Extrait toutes les images insérées dans les différentes étapes
+  const toutesLesImages = useMemo(() => {
+    return [
+      ...(formData.biais_images || []).map(img => ({ ...img, phase: img.phase as 'avant' | 'apres' })),
+      ...(formData.poi_images || []).map(img => ({ ...img, phase: img.phase as 'avant' | 'apres' })),
+      ...(formData.entry_images || []).map(img => ({ ...img, phase: img.phase as 'avant' | 'apres' })),
+    ]
+  }, [formData.biais_images, formData.poi_images, formData.entry_images])
+
+  // Synchronise les données si on édite un trade existant
   useEffect(() => {
     if (isEditMode) {
       if (existingReasons) setSelectedReasons(existingReasons)
-      if (existingImages) setTradeImages(existingImages)
+      if (existingImages) {
+        setFormData(tradeToFormData(editingTrade!, existingImages))
+      } else {
+        setFormData(tradeToFormData(editingTrade!))
+      }
+      setStepIds(extractStepIds(editingTrade!))
+      setManualMode(true)
+      setSelectedStartType('bias') // Par défaut
     }
-  }, [existingReasons, existingImages, isEditMode])
+  }, [existingReasons, existingImages, isEditMode, editingTrade])
 
+  // Réinitialise l'état à l'ouverture pour un nouveau trade
   useEffect(() => {
     if (!isNewTradeOpen) return
 
-    if (editingTrade) {
-      setFormData(tradeToFormData(editingTrade))
-      setStepIds(extractStepIds(editingTrade))
-      setManualMode(true)
-    } else {
-      // Pour un nouveau trade, on initialise le type de journal sur celui de la page active
-      setFormData({
-        ...INITIAL_FORM_STATE,
-        journal_type: currentJournalType,
-      })
+    if (!editingTrade) {
+      setFormData(INITIAL_FORM_STATE)
       setStepIds({})
       setSelectedReasons([])
-      setTradeImages([])
       setManualMode(false)
+      setSelectedStartType(null)
+      setTempIds({
+        tradeId: crypto.randomUUID(),
+        biais: crypto.randomUUID(),
+        poi: crypto.randomUUID(),
+        entry: crypto.randomUUID(),
+        result: crypto.randomUUID(),
+      })
     }
-  }, [isNewTradeOpen, editingTrade, currentJournalType])
+  }, [isNewTradeOpen, editingTrade])
 
   const handleClose = () => {
-    if (!saving && !isUpdating && !isCreatingQuick) {
+    if (!saving && !isUpdating && !isCreatingQuick && !analysantIA) {
       closeNewTrade()
     }
   }
@@ -174,18 +120,12 @@ export function TradeDrawer() {
     setFormData(INITIAL_FORM_STATE)
     setStepIds({})
     setSelectedReasons([])
-    setTradeImages([])
-    setTempIds({
-      tradeId: crypto.randomUUID(),
-      biais: crypto.randomUUID(),
-      poi: crypto.randomUUID(),
-      entry: crypto.randomUUID(),
-      result: crypto.randomUUID(),
-    })
+    setSelectedStartType(null)
+    setManualMode(false)
     closeNewTrade()
   }
 
-  // Analyse une image sélectionnée dans le Drawer pour pré-remplir le formulaire
+  // Appelle l'Edge Function d'analyse IA pour pré-remplir le formulaire
   const analyserImageSelectionnee = async (url: string) => {
     setAnalysantIA(true)
     console.log("🚀 [TradeDrawer] Lancement de l'analyse IA sur l'image :", url)
@@ -202,7 +142,7 @@ export function TradeDrawer() {
       const res = response.data
       console.log('✅ [TradeDrawer] Analyse IA terminée. Résultats :', res)
 
-      // Remplir les champs du formulaire avec les données extraites
+      // Injecte les données récoltées par l'IA dans les infos globales du formulaire
       setFormData((prev) => ({
         ...prev,
         pair: res.pair || prev.pair,
@@ -215,9 +155,6 @@ export function TradeDrawer() {
         rr_realized: res.rr_realized != null ? String(res.rr_realized) : prev.rr_realized,
         result: res.result || prev.result,
         exit_type: res.result === 'win' ? 'tp' : (res.result === 'loss' ? 'sl' : (res.result === 'breakeven' ? 'breakeven' : prev.exit_type)),
-        biais_timeframe: res.timeframe || prev.biais_timeframe,
-        poi_timeframe: res.timeframe || prev.poi_timeframe,
-        entry_timeframe: res.timeframe || prev.entry_timeframe,
       }))
 
       addToast("Données du trade pré-remplies par l'IA !", "success")
@@ -230,9 +167,9 @@ export function TradeDrawer() {
   }
 
   const handleSave = async (forceSave = false) => {
-    // Si l'utilisateur enregistre un nouveau trade avec des valeurs par défaut alors qu'il a des captures non analysées
-    if (!forceSave && !isEditMode && aDesDonneesParDefaut && toutesLesImages.length > 0) {
-      console.log("⚠️ [TradeDrawer] Données par défaut détectées, affichage du rappel.")
+    // Garde-fou : rappel si les données globales n'ont pas été remplies / restent par défaut
+    if (!forceSave && globalInfosParDefaut) {
+      console.log("⚠️ [TradeDrawer] Infos globales par défaut détectées. Affichage du rappel.")
       setShowRappelDialog(true)
       return
     }
@@ -246,65 +183,99 @@ export function TradeDrawer() {
         throw new Error('Utilisateur non connecté ou session expirée')
       }
 
+      const tradeIdActuel = isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId
+
+      // 1️⃣ Sauvegarde ou création du Trade
       if (isEditMode && editingTrade) {
         const biaisStep = editingTrade.steps.find((s) => s.type === 'biais')
         const preserveBiaisFields = (biaisStep?.fields ?? null) as Record<string, unknown> | null
 
-        const updated = await updateTrade({
+        await updateTrade({
           tradeId: editingTrade.id,
           formData,
           stepIds,
           previousStatus: editingTrade.status,
           preserveBiaisFields,
         })
+      } else {
+        const status = computeTradeStatus(formData, 'in_progress')
+        const tradeData = {
+          id: tempIds.tradeId,
+          user_id: user.id,
+          ...buildTradePayload(formData, status),
+        }
 
-        // Sauvegarde des raisons dynamiques avec leurs variantes
-        await saveTradeReasons({ tradeId: editingTrade.id, reasons: selectedReasons })
-        // Sauvegarde des nouvelles images structurées
-        await saveTradeImages({ tradeId: editingTrade.id, images: tradeImages })
+        console.log('📡 [TradeDrawer] Insertion du nouveau trade en BDD (ID forcé) :', tempIds.tradeId)
+        const { data: insertedTrade, error: tradeInsertError } = await supabase
+          .from('trades')
+          .insert(tradeData)
+          .select()
+          .single()
 
-        addToast('Trade mis à jour avec succès !', 'success')
-        resetAndClose()
-        openDetail(updated)
-        return
+        if (tradeInsertError || !insertedTrade) {
+          throw tradeInsertError || new Error("Erreur lors de la création du trade")
+        }
+
+        // Insertion des étapes
+        console.log('📡 [TradeDrawer] Insertion des étapes pour le nouveau trade')
+        const stepsToInsert = buildStepPayloads(tempIds.tradeId, formData, {
+          biais: tempIds.biais,
+          poi: tempIds.poi,
+          entry: tempIds.entry,
+          result: tempIds.result,
+        })
+
+        const { error: stepsInsertError } = await supabase.from('steps').insert(stepsToInsert)
+        if (stepsInsertError) throw stepsInsertError
       }
 
-      const status = computeTradeStatus(formData, 'in_progress')
-      const tradeData = {
-        id: tempIds.tradeId,
-        user_id: user.id,
-        ...buildTradePayload(formData, status),
-      }
+      // 2️⃣ Sauvegarde des raisons techniques dans la table de jointure trade_reasons
+      console.log('📡 [TradeDrawer] Sauvegarde des raisons techniques')
+      await saveTradeReasons({ tradeId: tradeIdActuel, reasons: selectedReasons })
 
-      console.log('📡 [TradeDrawer] Insertion du nouveau trade en BDD (ID forcé) :', tempIds.tradeId)
-      const { data: insertedTrade, error: tradeInsertError } = await supabase
-        .from('trades')
-        .insert(tradeData)
-        .select()
-        .single()
-
-      if (tradeInsertError || !insertedTrade) {
-        throw tradeInsertError || new Error("Erreur lors de la création du trade")
-      }
-
-      console.log('📡 [TradeDrawer] Construction et insertion des étapes avec IDs forcés')
-      const stepsToInsert = buildStepPayloads(tempIds.tradeId, formData, {
-        biais: tempIds.biais,
-        poi: tempIds.poi,
-        entry: tempIds.entry,
-        result: tempIds.result,
-      })
-
-      const { error: stepsInsertError } = await supabase.from('steps').insert(stepsToInsert)
-      if (stepsInsertError) throw stepsInsertError
-
-      // Sauvegarde des raisons dynamiques avec leurs variantes
-      await saveTradeReasons({ tradeId: tempIds.tradeId, reasons: selectedReasons })
-      // Sauvegarde des images
-      await saveTradeImages({ tradeId: tempIds.tradeId, images: tradeImages })
+      // 3️⃣ Sauvegarde des captures d'écran structurées dans la table trade_images
+      console.log('📡 [TradeDrawer] Sauvegarde des images structurées')
+      const imagesPourSauvegarde = [
+        ...(formData.biais_images || []).map((img) => ({
+          id: img.id,
+          trade_id: tradeIdActuel,
+          url: img.url,
+          source: img.source,
+          phase: img.phase,
+          context: 'superieur' as const,
+        })),
+        ...(formData.poi_images || []).map((img) => ({
+          id: img.id,
+          trade_id: tradeIdActuel,
+          url: img.url,
+          source: img.source,
+          phase: img.phase,
+          context: 'intermediaire' as const,
+        })),
+        ...(formData.entry_images || []).map((img) => ({
+          id: img.id,
+          trade_id: tradeIdActuel,
+          url: img.url,
+          source: img.source,
+          phase: img.phase,
+          context: 'inferieur' as const,
+        })),
+      ]
+      await saveTradeImages({ tradeId: tradeIdActuel, images: imagesPourSauvegarde })
 
       await queryClient.invalidateQueries({ queryKey: ['trades'] })
-      addToast('Le trade a été enregistré avec succès !', 'success')
+      addToast(isEditMode ? 'Trade mis à jour avec succès !' : 'Le trade a été enregistré avec succès !', 'success')
+      
+      if (isEditMode && editingTrade) {
+        // Recharge le trade complet et réouvre le détail
+        const { data: updatedTrade } = await supabase
+          .from('trades')
+          .select('*, steps(*, step_images(*))')
+          .eq('id', editingTrade.id)
+          .single()
+        if (updatedTrade) openDetail(updatedTrade as any)
+      }
+
       resetAndClose()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde'
@@ -314,7 +285,7 @@ export function TradeDrawer() {
     }
   }
 
-  const enCours = saving || isUpdating || isCreatingQuick
+  const enCours = saving || isUpdating || isCreatingQuick || analysantIA
 
   return (
     <>
@@ -329,6 +300,7 @@ export function TradeDrawer() {
           isNewTradeOpen ? 'translate-x-0' : 'translate-x-full'
         )}
       >
+        {/* En-tête */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border flex-shrink-0">
           <button
             onClick={handleClose}
@@ -343,7 +315,7 @@ export function TradeDrawer() {
             </h2>
             {isEditMode && editingTrade && (
               <p className="text-txt3 text-[12px] truncate">
-                {editingTrade.pair} · {editingTrade.direction} · {editingTrade.date_backtested}
+                {editingTrade.pair} · {editingTrade.direction.toUpperCase()} · {editingTrade.date_backtested}
               </p>
             )}
           </div>
@@ -356,8 +328,11 @@ export function TradeDrawer() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {!isEditMode && !manualMode ? (
+        {/* Zone de contenu principale scrollable */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          
+          {/* Phase 0A : Drag/Drop d'images initial (Quick entry) */}
+          {!isEditMode && !manualMode && (
             <ImageAnalysisUpload
               onAnalysisComplete={async ({ analysis, imageUrl }) => {
                 try {
@@ -370,156 +345,135 @@ export function TradeDrawer() {
               }}
               onManualMode={() => setManualMode(true)}
             />
-          ) : (() => {
-            const tradeIdActuel = isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId
-            const getStepId = (type: string) => {
-              if (type === 'general' || type === 'reasons') return ''
-              if (isEditMode) {
-                return (stepIds as any)[type] || (tempIds as any)[type]
-              }
-              return (tempIds as any)[type]
-            }
+          )}
 
-            return (
-              <div className="flex flex-col">
-                {stepsAffichees.map((step, index) => (
-                  <StepBlock
-                    key={step.id}
-                    number={index + 1}
-                    title={step.title}
-                    type={step.type}
-                    defaultOpen={index === 0}
-                    formData={formData}
-                    setFormData={setFormData}
-                    tradeId={tradeIdActuel}
-                    stepId={getStepId(step.type)}
-                    selectedReasonIds={selectedReasons.map(r => r.reason_id)}
-                    setSelectedReasonIds={(ids) => {
-                      // Compatibilité : si on reçoit des IDs simples, on crée des objets
-                      // Le vrai changement passe par TradeReasonsAccordions directement
-                    }}
-                    selectedReasons={selectedReasons}
-                    setSelectedReasons={setSelectedReasons}
-                    tradeImages={tradeImages}
-                  />
-                ))}
-              </div>
-            )
-          })()}
+          {/* Phase 0B : Sélection du point d'entrée du journal */}
+          {!isEditMode && manualMode && !selectedStartType && (
+            <TradeTypeSelector onSelect={(type) => setSelectedStartType(type)} />
+          )}
+
+          {/* Phase 1 : Formulaire principal structuré */}
+          {manualMode && selectedStartType && (
+            <div className="space-y-4">
+              
+              {/* Garde-fou visuel (Bannière d'avertissement) */}
+              {globalInfosParDefaut && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-500 text-xs flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>Les informations globales du trade (Paire, Session, R:R...) semblent être par défaut. Pense à les modifier ou utilise l'assistant IA ci-dessous.</span>
+                </div>
+              )}
+
+              {/* 1. Informations Globales (Masqué par défaut) */}
+              <GlobalInfosPanel
+                formData={formData}
+                setFormData={setFormData}
+                onDefaultStatusChange={(isDef) => setGlobalInfosParDefaut(isDef)}
+              />
+
+              {/* 2. Les 3 Panels de section (Biais, POI, Entrée) */}
+              <TradeSectionPanel
+                sectionKey="biais"
+                title="Biais de Marché"
+                icon="🧭"
+                defaultOpen={selectedStartType === 'bias'}
+                formData={formData}
+                setFormData={setFormData}
+                tradeId={isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId}
+                stepId={isEditMode && stepIds.biais ? stepIds.biais : tempIds.biais}
+                selectedReasons={selectedReasons}
+                setSelectedReasons={setSelectedReasons}
+              />
+
+              <TradeSectionPanel
+                sectionKey="poi"
+                title="Point d'Intérêt (POI)"
+                icon="🎯"
+                defaultOpen={selectedStartType === 'poi'}
+                formData={formData}
+                setFormData={setFormData}
+                tradeId={isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId}
+                stepId={isEditMode && stepIds.poi ? stepIds.poi : tempIds.poi}
+                selectedReasons={selectedReasons}
+                setSelectedReasons={setSelectedReasons}
+              />
+
+              <TradeSectionPanel
+                sectionKey="entry"
+                title="Prise de Position & Entrée"
+                icon="⚡"
+                defaultOpen={selectedStartType === 'confirmation'}
+                formData={formData}
+                setFormData={setFormData}
+                tradeId={isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId}
+                stepId={isEditMode && stepIds.entry ? stepIds.entry : tempIds.entry}
+                selectedReasons={selectedReasons}
+                setSelectedReasons={setSelectedReasons}
+              />
+
+              {/* 3. Assistant IA (Remplissage rapide si des images existent) */}
+              <IAAnalysisPanel
+                images={toutesLesImages}
+                analysantIA={analysantIA}
+                onAnalyze={analyserImageSelectionnee}
+              />
+
+            </div>
+          )}
         </div>
 
-        {(isEditMode || manualMode) && (
-          <div className="flex flex-col border-t border-border flex-shrink-0 bg-surface">
-            {/* Zone d'assistant IA rapide si des images existent dans le formulaire */}
-            {toutesLesImages.length > 0 && (
-              <div className="px-5 pt-3.5 pb-2.5 bg-bg/25 border-b border-border/40">
-                <p className="text-[11px] text-txt3 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <span>🔮 Assistant IA (Remplissage rapide) :</span>
-                  {analysantIA && (
-                    <span className="flex items-center gap-1.5 text-[10px] text-accent normal-case font-normal animate-pulse">
-                      <span className="w-2.5 h-2.5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                      Analyse en cours...
-                    </span>
-                  )}
-                </p>
-                <div className="flex gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin">
-                  {toutesLesImages.map((img, idx) => (
-                    <button
-                      key={img.id || idx}
-                      type="button"
-                      disabled={analysantIA}
-                      onClick={() => analyserImageSelectionnee(img.url)}
-                      className={cn(
-                        "relative w-20 aspect-video rounded border border-border2 overflow-hidden hover:border-accent hover:scale-105 transition-all flex-shrink-0 bg-surface2 disabled:opacity-50",
-                        analysantIA && "cursor-not-allowed"
-                      )}
-                      title="Cliquer pour lancer l'analyse Gemini Vision sur cette capture"
-                    >
-                      <img src={img.url} className="w-full h-full object-cover" alt="Capture à analyser" loading="lazy" />
-                      <div className="absolute inset-0 bg-black/40 hover:bg-black/15 transition-colors flex items-center justify-center">
-                        <span className="text-[9px] text-white font-bold">🔮 Analyser</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Boutons d'action principaux */}
-            <div className="flex justify-end gap-2.5 px-5 py-4">
-              <button
-                onClick={() => {
-                  if (!enCours) resetAndClose()
-                }}
-                disabled={enCours}
-                className="px-4 py-2 border border-border2 rounded-md text-txt2 text-[13px] font-medium hover:bg-surface2 hover:text-txt transition-colors disabled:opacity-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={() => handleSave(false)}
-                disabled={enCours}
-                className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {enCours ? 'Enregistrement...' : isEditMode ? 'Mettre à jour' : 'Enregistrer'}
-              </button>
-            </div>
+        {/* Barre d'action inférieure (si le formulaire est actif) */}
+        {(isEditMode || (manualMode && selectedStartType)) && (
+          <div className="flex justify-end gap-3 px-5 py-4 border-t border-border flex-shrink-0 bg-surface">
+            <button
+              onClick={resetAndClose}
+              disabled={enCours}
+              className="px-4 py-2 border border-border2 rounded-md text-txt2 text-[13px] font-medium hover:bg-surface2 hover:text-txt transition-colors disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => handleSave(false)}
+              disabled={enCours}
+              className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {saving ? 'Enregistrement...' : isEditMode ? 'Mettre à jour' : 'Enregistrer'}
+            </button>
           </div>
         )}
 
-        {/* Dialogue de rappel anti-oubli */}
+        {/* Dialogue de rappel anti-oubli (garde-fou) */}
         {showRappelDialog && (
           <div className="absolute inset-0 bg-black/85 z-[150] flex items-center justify-center p-6 animate-fadeIn animate-duration-200">
             <div className="bg-surface border border-border rounded-xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
               <div className="text-center space-y-2">
                 <span className="text-3xl">⚠️</span>
-                <h3 className="text-txt font-semibold text-sm">Données non complétées</h3>
+                <h3 className="text-txt font-semibold text-sm">Données non modifiées</h3>
                 <p className="text-txt3 text-xs leading-relaxed">
-                  Tu t'apprêtes à enregistrer ce trade avec les valeurs par défaut. Souhaites-tu d'abord utiliser l'IA sur l'une de tes captures pour extraire automatiquement les données (paire, direction, R:R) ?
+                  Tu t'apprêtes à enregistrer ce trade avec les informations globales par défaut. Es-tu sûr de vouloir continuer ou souhaites-tu d'abord les modifier ?
                 </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <p className="text-[10px] text-txt3 font-bold uppercase tracking-wider text-center">Choisir la capture à analyser :</p>
-                <div className="flex gap-2 justify-center overflow-x-auto py-1 scrollbar-thin">
-                  {toutesLesImages.map((img, idx) => (
-                    <button
-                      key={img.id || idx}
-                      type="button"
-                      onClick={() => {
-                        setShowRappelDialog(false)
-                        analyserImageSelectionnee(img.url)
-                      }}
-                      className="relative w-16 aspect-video rounded border border-border2 overflow-hidden hover:border-accent hover:scale-105 transition-all flex-shrink-0 bg-surface2"
-                    >
-                      <img src={img.url} className="w-full h-full object-cover" alt="Image" loading="lazy" />
-                      <div className="absolute inset-0 bg-black/45 flex items-center justify-center">
-                        <span className="text-[9px] text-white font-bold">🔮 Lancer</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div className="flex flex-col gap-2 pt-2 border-t border-border/40">
                 <button
                   type="button"
                   onClick={() => handleSave(true)}
-                  className="w-full py-2 bg-surface2 border border-border2 text-txt hover:bg-surface transition-colors rounded-md text-xs font-semibold text-center"
+                  className="w-full py-2 bg-accent text-white hover:bg-accent/90 transition-colors rounded-md text-xs font-semibold text-center"
                 >
-                  💾 Enregistrer sans l'IA
+                  💾 Enregistrer quand même
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowRappelDialog(false)}
-                  className="w-full py-2 text-txt3 hover:text-txt hover:underline transition-colors text-xs text-center font-medium"
+                  className="w-full py-2 bg-surface2 border border-border2 text-txt hover:bg-surface transition-colors rounded-md text-xs font-semibold text-center"
                 >
-                  Annuler
+                  Modifier les informations
                 </button>
               </div>
             </div>
           </div>
         )}
+
       </aside>
     </>
   )

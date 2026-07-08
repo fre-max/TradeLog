@@ -15,14 +15,15 @@ export const INITIAL_FORM_STATE = {
   emotion: '',
   strategy_id: '',
   journal_type: 'global' as 'global' | 'bias' | 'poi' | 'confirmation',
+  description: '', // Seul champ de description libre global
 
   biais_timeframe: 'H4',
   biais_direction: 'Haussier',
-  biais_reasons: '',
+  biais_reasons: '', // Déprécié, gardé pour compatibilité de compilation
 
   poi_timeframe: 'H1',
   poi_type: 'Order Block',
-  poi_confluences: '',
+  poi_confluences: '', // Déprécié, gardé pour compatibilité de compilation
 
   entry_timeframe: 'M5',
   entry_setup: '',
@@ -30,21 +31,21 @@ export const INITIAL_FORM_STATE = {
   entry_sl: '',
   entry_tp: '',
   entry_trailing: '',
-  entry_reasons: '',
-
-  review_good: '',
-  review_bad: '',
+  entry_reasons: '', // Déprécié, gardé pour compatibilité de compilation
   
   // Champs spécifiques aux missed trades (ordres non déclenchés)
   missed_gap: '',
-  missed_reason: '',
+  missed_reason: '', // Déprécié, gardé pour compatibilité de compilation
+
+  review_good: '', // Déprécié, gardé pour compatibilité de compilation
+  review_bad: '', // Déprécié, gardé pour compatibilité de compilation
 
   // Listes d'images associées à chaque étape du formulaire avec leur phase (avant/apres)
   biais_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
   poi_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
   entry_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
-  result_images: [] as { id: string; url: string; source: 'telegram' | 'upload' | 'url'; phase: 'avant' | 'apres' }[],
-  // Raisons techniques issues du catalogue (liées aux étapes)
+  
+  // Raisons techniques issues du catalogue (liées aux étapes, conservé pour mapping interne)
   biais_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
   poi_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
   entry_catalog_reasons: [] as { reason_id: string; variant_name: string }[],
@@ -73,7 +74,7 @@ function numStr(v: unknown): string {
 }
 
 /** Convertit un trade BDD en état de formulaire (création ou édition). */
-export function tradeToFormData(trade: TradeWithSteps): FormDataState {
+export function tradeToFormData(trade: TradeWithSteps, existingImages: any[] = []): FormDataState {
   const biais = trade.steps.find((s) => s.type === 'biais') as StepWithImages | undefined
   const poi = trade.steps.find((s) => s.type === 'poi') as StepWithImages | undefined
   const entry = trade.steps.find((s) => s.type === 'entry') as StepWithImages | undefined
@@ -84,6 +85,17 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
   const entryFields = (entry?.fields ?? {}) as Record<string, unknown>
   const reviewFields = (review?.fields ?? {}) as Record<string, unknown>
   const gemini = biaisFields.extracted as GeminiAnalysis | undefined
+
+  // Trie les images par contexte (provenant de la table trade_images)
+  const biaisImages = existingImages
+    .filter((img) => img.context === 'superieur')
+    .map((img) => ({ id: img.id, url: img.url, source: img.source, phase: img.phase }))
+  const poiImages = existingImages
+    .filter((img) => img.context === 'intermediaire')
+    .map((img) => ({ id: img.id, url: img.url, source: img.source, phase: img.phase }))
+  const entryImages = existingImages
+    .filter((img) => img.context === 'inferieur')
+    .map((img) => ({ id: img.id, url: img.url, source: img.source, phase: img.phase }))
 
   return {
     pair: trade.pair,
@@ -99,6 +111,7 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
     emotion: trade.emotion ?? '',
     strategy_id: trade.strategy_id ?? '',
     journal_type: trade.journal_type ?? 'global',
+    description: review?.notes ?? str(reviewFields.description),
 
     biais_timeframe: biais?.timeframe ?? gemini?.timeframe ?? 'H4',
     biais_direction: str(biaisFields.direction) || (gemini?.direction === 'short' ? 'Baissier' : gemini?.direction === 'long' ? 'Haussier' : 'Haussier'),
@@ -116,18 +129,18 @@ export function tradeToFormData(trade: TradeWithSteps): FormDataState {
     entry_trailing: str(entryFields.trailing),
     entry_reasons: entry?.notes ?? '',
 
-    review_good: str(reviewFields.good),
-    review_bad: str(reviewFields.bad ?? reviewFields.improve),
-
     // Champs spécifiques aux missed trades
     missed_gap: numStr(reviewFields.missed_gap),
     missed_reason: str(reviewFields.missed_reason),
 
-    // Listes d'images par étape avec récupération de la phase
-    biais_images: biais?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
-    poi_images: poi?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
-    entry_images: entry?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
-    result_images: review?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as 'avant' | 'apres' })) ?? [],
+    review_good: str(reviewFields.good),
+    review_bad: str(reviewFields.bad ?? reviewFields.improve),
+
+    // Listes d'images
+    biais_images: biaisImages.length > 0 ? biaisImages : (biais?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as any })) ?? []),
+    poi_images: poiImages.length > 0 ? poiImages : (poi?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as any })) ?? []),
+    entry_images: entryImages.length > 0 ? entryImages : (entry?.images?.map(img => ({ id: img.id, url: img.url || '', source: (img.source || 'upload') as any, phase: (img.phase || 'avant') as any })) ?? []),
+    
     // Extractions des raisons du catalogue depuis les JSONB des étapes
     biais_catalog_reasons: ((biaisFields.catalog_reasons ?? []) as any[]).map(r => ({
       reason_id: String(r.reason_id),
@@ -170,10 +183,9 @@ export function computeTradeStatus(
   formData: FormDataState,
   previousStatus: TradeWithSteps['status']
 ): TradeWithSteps['status'] {
-  const hasReview = Boolean(formData.review_good.trim() || formData.review_bad.trim())
   const hasResult = Boolean(formData.result && formData.rr_realized)
 
-  if (hasResult && hasReview && formData.emotion) {
+  if (hasResult && formData.emotion) {
     return 'complete'
   }
 
@@ -209,7 +221,7 @@ export function buildStepPayloads(
       type: 'biais',
       title: 'Biais',
       timeframe: formData.biais_timeframe,
-      notes: formData.biais_reasons || null,
+      notes: null,
       fields: {
         ...(preserveBiaisFields ?? {}),
         direction: formData.biais_direction,
@@ -223,7 +235,7 @@ export function buildStepPayloads(
       type: 'poi',
       title: 'POI / Zone',
       timeframe: formData.poi_timeframe,
-      notes: formData.poi_confluences || null,
+      notes: null,
       fields: { 
         zone_type: formData.poi_type,
         catalog_reasons: formData.poi_catalog_reasons,
@@ -236,7 +248,7 @@ export function buildStepPayloads(
       type: 'entry',
       title: 'Entrée',
       timeframe: formData.entry_timeframe,
-      notes: formData.entry_reasons || null,
+      notes: null,
       fields: {
         setup: formData.entry_setup,
         price: formData.entry_price ? parseFloat(formData.entry_price) : null,
@@ -258,12 +270,10 @@ export function buildStepPayloads(
       type: 'result',
       title: 'Résultat & Review',
       timeframe: null,
-      notes: `Ce que j'ai bien fait : ${formData.review_good}\nÀ améliorer : ${formData.review_bad}`,
+      notes: formData.description || null,
       fields: {
-        good: formData.review_good,
-        bad: formData.review_bad,
+        description: formData.description,
         missed_gap: formData.result === 'missed' && formData.missed_gap ? parseFloat(formData.missed_gap) : null,
-        missed_reason: formData.result === 'missed' ? formData.missed_reason : null,
       },
     },
   ]

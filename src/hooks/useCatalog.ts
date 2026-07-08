@@ -21,7 +21,7 @@ export function useCatalog() {
         .from('reason_catalog')
         .select(`
           *,
-          family: reason_families (id, name),
+          family: reason_families (id, name, slug),
           variants: reason_variants (*)
         `)
         .order('created_at', { ascending: false })
@@ -52,6 +52,18 @@ export function useCatalog() {
       return itemsAvecType as ReasonCatalogItem[]
     },
   })
+}
+
+/**
+ * Hook pour filtrer le catalogue de raisons par le slug d'une famille.
+ */
+export function useCatalogByFamilySlug(slug: string) {
+  const query = useCatalog()
+  const data = query.data ? query.data.filter((item: any) => item.family?.slug === slug) : undefined
+  return {
+    ...query,
+    data,
+  }
 }
 
 interface CreateCatalogItemInput {

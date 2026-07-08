@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useReasonFamilies } from '@/hooks/useReasonFamilies'
-import { useCatalog } from '@/hooks/useCatalog'
+import { useCatalog, useCreateCatalogItem } from '@/hooks/useCatalog'
 import { cn } from '@/lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────
@@ -17,6 +17,7 @@ interface TradeReasonsAccordionsProps {
   // Optionnel : pour accès complet aux objets sélectionnés avec variantes
   selectedReasons?: SelectedReason[]
   onChangeReasons?: (newReasons: SelectedReason[]) => void
+  familySlug?: string
 }
 
 /**
@@ -35,9 +36,14 @@ export function TradeReasonsAccordions({
   onChange,
   selectedReasons: selectedReasonsExt,
   onChangeReasons,
+  familySlug,
 }: TradeReasonsAccordionsProps) {
   const { data: families, isLoading: loadingFamilies } = useReasonFamilies()
   const { data: catalogItems, isLoading: loadingCatalog } = useCatalog()
+  const { mutateAsync: createCatalogItem } = useCreateCatalogItem()
+
+  // Saisie pour l'ajout rapide de concept
+  const [nouveauConcept, setNouveauConcept] = useState('')
 
   // Accordéons ouverts (on peut en avoir plusieurs ouverts simultanément)
   const [openFamilyIds, setOpenFamilyIds] = useState<Set<string>>(new Set())
@@ -132,29 +138,59 @@ export function TradeReasonsAccordions({
     // Ne pas fermer le sous-menu pour permettre la multi-sélection de variantes
   }
 
+  // Ajoute un nouveau concept au catalogue dans la famille correspondante
+  const handleAjouterConcept = async () => {
+    if (!nouveauConcept.trim() || !familySlug) return
+    const family = families?.find(f => f.slug === familySlug)
+    if (!family) return
+
+    try {
+      console.log('🚀 [TradeReasonsAccordions] Ajout rapide au catalogue du concept:', nouveauConcept)
+      const insertedItem = await createCatalogItem({
+        item: {
+          family_id: family.id,
+          title: nouveauConcept.trim(),
+        },
+        variants: []
+      })
+
+      // Coche automatiquement le nouveau concept créé
+      updateSelection([...selectedReasons, { reason_id: insertedItem.id, variant_name: 'Standard' }])
+      setNouveauConcept('')
+    } catch (e) {
+      console.error("❌ [TradeReasonsAccordions] Échec de l'ajout rapide de concept :", e)
+    }
+  }
+
   // Récupère toutes les variantes sélectionnées pour une raison donnée
   const getSelectedVariants = (reasonId: string) =>
     selectedReasons.filter(r => r.reason_id === reasonId).map(r => r.variant_name)
 
+  const familiesAffichees = familySlug
+    ? families.filter(f => f.slug === familySlug)
+    : families
+
   return (
     <div className="space-y-2">
-      {families.map(family => {
+      {familiesAffichees.map(family => {
         // Raisons appartenant à cette famille
         const familyReasons = catalogItems?.filter(item => item.family_id === family.id) || []
         // Combien sont sélectionnées dans cette famille
         const selectedCount = familyReasons.filter(r =>
           selectedReasons.some(sr => sr.reason_id === r.id)
         ).length
-        const isOpen = openFamilyIds.has(family.id)
+        const isOpen = familySlug ? true : openFamilyIds.has(family.id)
+        const hideHeader = Boolean(familySlug)
 
         return (
-          <div key={family.id} className="border border-border2 rounded-xl overflow-hidden transition-all">
+          <div key={family.id} className={cn("border border-border2 rounded-xl overflow-hidden transition-all", hideHeader && "border-none bg-transparent rounded-none")}>
             {/* ─── Header Accordéon ───────────────────────────── */}
-            <button
-              type="button"
-              onClick={() => toggleFamily(family.id)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-surface hover:bg-surface2 transition-colors text-left"
-            >
+            {!hideHeader && (
+              <button
+                type="button"
+                onClick={() => toggleFamily(family.id)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-surface hover:bg-surface2 transition-colors text-left"
+              >
               <div className="flex items-center gap-2.5">
                 {/* Icône de la famille si disponible */}
                 {family.icon && (
@@ -181,10 +217,11 @@ export function TradeReasonsAccordions({
                 ▼
               </span>
             </button>
+            )}
 
             {/* ─── Liste des Raisons ──────────────────────────── */}
             {isOpen && (
-              <div className="bg-bg border-t border-border2 p-3 space-y-1.5">
+              <div className={cn("bg-bg border-t border-border2 p-3 space-y-1.5", hideHeader && "bg-transparent border-t-0 p-0")}>
                 {familyReasons.length === 0 ? (
                   <p className="text-xs text-txt3 py-2 px-1 text-center italic">
                     Aucune raison dans cette famille — va dans le Catalogue pour en ajouter.
@@ -313,6 +350,26 @@ export function TradeReasonsAccordions({
                       </div>
                     )
                   })
+                )}
+
+                {/* Ajout rapide de concept à la volée dans la famille système courante */}
+                {familySlug && (
+                  <div className="mt-3.5 pt-3 border-t border-border2 flex gap-2 animate-fadeIn">
+                    <input
+                      type="text"
+                      placeholder="➕ Ajouter un concept à cette famille..."
+                      value={nouveauConcept}
+                      onChange={(e) => setNouveauConcept(e.target.value)}
+                      className="flex-1 bg-bg border border-border2 rounded-md text-txt px-3 py-1.5 text-[12.5px] outline-none focus:border-accent"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAjouterConcept}
+                      className="px-3 py-1.5 bg-accent text-white rounded-md text-[12px] font-semibold hover:bg-accent/90 transition-colors flex-shrink-0"
+                    >
+                      Ajouter
+                    </button>
+                  </div>
                 )}
               </div>
             )}

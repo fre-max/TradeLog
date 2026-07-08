@@ -11,6 +11,27 @@ export function useReasonFamilies() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: async (): Promise<ReasonFamily[]> => {
+      // 1️⃣ Assure la présence des familles de raisons permanentes (seeding)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const systemFamilies = [
+          { user_id: user.id, name: 'Raisons Biais — Avant Position', icon: '🧭', order: 0, slug: 'biais_avant' },
+          { user_id: user.id, name: 'Raisons Biais — Après Dénouement', icon: '🔄', order: 1, slug: 'biais_apres' },
+          { user_id: user.id, name: 'Raisons POI — Avant Position', icon: '🎯', order: 2, slug: 'poi_avant' },
+          { user_id: user.id, name: 'Raisons POI — Après Dénouement', icon: '🔄', order: 3, slug: 'poi_apres' },
+          { user_id: user.id, name: 'Raisons Entrée — Avant Position', icon: '⚡', order: 4, slug: 'entree_avant' },
+          { user_id: user.id, name: 'Raisons Entrée — Après Dénouement', icon: '🔄', order: 5, slug: 'entree_apres' },
+        ]
+        const { error: upsertError } = await supabase
+          .from('reason_families')
+          .upsert(systemFamilies, { onConflict: 'user_id,slug' })
+        
+        if (upsertError) {
+          console.warn('⚠️ [useReasonFamilies] Échec de l\'upsert des familles système (migration peut-être manquante) :', upsertError)
+        }
+      }
+
+      // 2️⃣ Récupère la liste finale
       const { data, error } = await supabase
         .from('reason_families')
         .select('*')
