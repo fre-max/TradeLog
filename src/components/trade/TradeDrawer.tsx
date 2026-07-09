@@ -130,11 +130,8 @@ export function TradeDrawer() {
     setAnalysantIA(true)
     console.log("🚀 [TradeDrawer] Lancement de l'analyse IA sur l'image :", url)
     try {
-      const response = await supabase.functions.invoke('analyze', {
-        body: {
-          url,
-          mode: 'setup'
-        }
+      const response = await supabase.functions.invoke(`analyze?url=${encodeURIComponent(url)}&mode=setup`, {
+        method: 'GET'
       })
 
       if (response.error) throw response.error
