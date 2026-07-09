@@ -21,9 +21,9 @@ export function useTrades() {
         .select(`
           *,
           steps (
-            *,
-            images: step_images (*)
-          )
+            *
+          ),
+          images: trade_images (*)
         `)
         .order('created_at', { ascending: false })
 
@@ -40,7 +40,7 @@ export function useTrade(id: string) {
     queryFn: async (): Promise<TradeWithSteps> => {
       const { data, error } = await supabase
         .from('trades')
-        .select(`*, steps (*, images: step_images (*))`)
+        .select(`*, steps (*), images: trade_images (*)`)
         .eq('id', id)
         .single()
 
@@ -93,61 +93,12 @@ async function synchroniserStepImages(
   stepId: string,
   imagesForm: { id: string; url: string; source: string; phase?: string }[]
 ) {
-  console.log(`📡 [syncImages] Synchronisation des images pour le step : ${stepId}`);
-  
-  // 1️⃣ Récupérer les images actuellement en base pour ce step
-  const { data: dbImages, error: fetchErr } = await supabase
-    .from('step_images')
-    .select('id, url')
-    .eq('step_id', stepId)
-
-  if (fetchErr) {
-    console.error('❌ [syncImages] Erreur lors de la récupération des images :', fetchErr)
-    throw fetchErr
-  }
-
-  const dbUrls = new Set((dbImages || []).map((img) => img.url))
-  const formUrls = new Set(imagesForm.map((img) => img.url))
-
-  // Images à insérer (présentes dans le formulaire mais pas en base)
-  const aInserer = imagesForm.filter((img) => !dbUrls.has(img.url))
-  
-  // Images à supprimer (présentes en base mais plus dans le formulaire)
-  const aSupprimer = (dbImages || []).filter((img) => img.url && !formUrls.has(img.url))
-
-  // 2️⃣ Insérer les nouvelles images
-  if (aInserer.length > 0) {
-    console.log(`📡 [syncImages] Insertion de ${aInserer.length} nouvelles images`);
-    const { error: insertErr } = await supabase
-      .from('step_images')
-      .insert(
-        aInserer.map((img) => ({
-          step_id: stepId,
-          url: img.url,
-          source: img.source || 'upload',
-          phase: img.phase || 'avant', // Prise en compte de la phase (avant/apres)
-        }))
-      )
-    if (insertErr) {
-      console.error("❌ [syncImages] Erreur d'insertion d'images :", insertErr)
-      throw insertErr
-    }
-  }
-
-  // 3️⃣ Supprimer les images retirées
-  if (aSupprimer.length > 0) {
-    console.log(`📡 [syncImages] Suppression de ${aSupprimer.length} images obsolètes`);
-    const ids = aSupprimer.map((img) => img.id)
-    const { error: deleteErr } = await supabase
-      .from('step_images')
-      .delete()
-      .in('id', ids)
-    if (deleteErr) {
-      console.error("❌ [syncImages] Erreur de suppression d'images :", deleteErr)
-      throw deleteErr
-    }
-  }
+  // Déprécié : la gestion des images passe par trade_images directement
+  console.log(`📡 [syncImages] Bypass de synchronisation des images pour le step : ${stepId}`);
+  return;
 }
+
+
 
 interface UpdateTradeInput {
   tradeId: string
@@ -177,7 +128,7 @@ export function useUpdateTrade() {
         .from('trades')
         .update(tradePayload)
         .eq('id', tradeId)
-        .select(`*, steps (*, images: step_images (*))`)
+        .select(`*, steps (*), images: trade_images (*)`)
         .single()
 
       if (tradeError || !updatedTrade) {
@@ -206,7 +157,7 @@ export function useUpdateTrade() {
 
       const { data: fullTrade, error: refetchError } = await supabase
         .from('trades')
-        .select(`*, steps (*, images: step_images (*))`)
+        .select(`*, steps (*), images: trade_images (*)`)
         .eq('id', tradeId)
         .single()
 
