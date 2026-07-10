@@ -114,7 +114,7 @@ export function TradeSectionPanel({
 
       {/* ─── Contenu Déroulable ─────────────────────────────── */}
       {open && (
-        <div className="p-5 bg-bg/20 border-t border-border2 space-y-6 animate-slideDown">
+        <div className="p-5 bg-surface2 border-t border-border2 space-y-6 animate-slideDown">
           
           {/* ──────────────────────────────────────────────────────── */}
           {/* 🟢 PHASE 1 : AVANT LA POSITION                          */}
@@ -133,7 +133,8 @@ export function TradeSectionPanel({
                     value={formData.biais_timeframe}
                     onChange={(e) => updateField('biais_timeframe', e.target.value)}
                   >
-                    {['D1', 'H4', 'H1', 'M30', 'M15'].map((t) => (
+                    {/* Monthly et W1 ajoutés pour les analyses sur grands timeframes */}
+                    {['Monthly', 'W1', 'D1', 'H4', 'H1', 'M30', 'M15'].map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </Select>
@@ -184,7 +185,8 @@ export function TradeSectionPanel({
                       value={formData.entry_timeframe}
                       onChange={(e) => updateField('entry_timeframe', e.target.value)}
                     >
-                      {['M30', 'M15', 'M5', 'M3', 'M1'].map((t) => (
+                      {/* H1, H4 et D1 ajoutés pour les confirmations sur grands timeframes */}
+                      {['D1', 'H4', 'H1', 'M30', 'M15', 'M5', 'M3', 'M1'].map((t) => (
                         <option key={t} value={t}>{t}</option>
                       ))}
                     </Select>
@@ -338,7 +340,7 @@ function StepImagePanel({
   const imagesFiltrees = images.filter((img) => img.phase === phase)
 
   return (
-    <div className="p-3.5 bg-bg/25 border border-border2 rounded-lg space-y-3">
+    <div className="p-3.5 bg-surface2 border border-border2 rounded-lg space-y-3">
       {/* Galerie Miniature */}
       {imagesFiltrees.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">

@@ -55,11 +55,13 @@ Voici comment localiser les informations sur l'image :
    - Regarde le rectangle de statut au centre de l'outil de position (au milieu de la séparation rouge/verte).
    - Lis la valeur écrite à côté de "Risk/reward ratio:" (ex: "2.64"). C'est le ratio planifié (rr).
 5. **Dénouement & Résultat :**
-   - Observe les bougies japonaises (le prix) qui se développent vers la droite.
-   - Si les bougies traversent entièrement la boîte verte et touchent ou dépassent le niveau du Take Profit, le résultat est "win". Le R:R réalisé (rr_realized) est alors égal au Risk/reward ratio planifié.
-   - Si les bougies montent ou descendent dans la boîte rouge et touchent le Stop Loss, le résultat est "loss" (le R:R réalisé est de -1).
-   - Si le trade est coupé manuellement ou fini à l'équilibre, le résultat est "breakeven" (le R:R réalisé est de 0 ou proche de 0).
-   - Si le prix n'a jamais atteint la ligne d'entrée avant de repartir dans la direction prévue (ordre limite non déclenché), le résultat est "missed" (le R:R réalisé est de 0).
+   - Observe les bougies japonaises (le prix) qui se développent vers la droite à partir du début de l'outil de position.
+   - **Distinction cruciale entre Activé (Win/Loss) et Manqué (Missed) :**
+     * **Ordre Manqué (Missed) :** Regarde si le prix (les mèches des bougies de retracement) a rebondi *avant* de toucher ou traverser la ligne d'entrée bleue/grise (la frontière entre le vert et le rouge). Si le prix repart dans la direction prévue sans avoir touché cette ligne de prix d'entrée, alors le résultat est **"missed"** et le R:R réalisé (`rr_realized`) doit être **0**.
+     * **Ordre Déclenché (Win/Loss) :** Si les mèches des bougies touchent ou traversent la ligne d'entrée, l'ordre s'est déclenché.
+       * Si le prix traverse entièrement la boîte verte et touche le Take Profit sans toucher le SL : le résultat est **"win"** et `rr_realized` est égal à `rr`.
+       * Si le prix traverse la boîte rouge et touche le Stop Loss : le résultat est **"loss"** et `rr_realized` est **-1**.
+       * Si le trade est coupé manuellement ou fini à l'équilibre : le résultat est **"breakeven"** (le R:R réalisé est de 0 ou proche de 0).
 6. **Date & Heure (Sur l'axe horizontal tout à fait en bas) :**
    - Cherche les étiquettes de couleur (bleues, grises ou sombres) sur l'axe du temps en bas.
    - L'étiquette de gauche correspond à l'entrée/début du trade (date_backtested et entry_time). Convertis le jour (ex: "Thu 02 Apr '26" -> "2026-04-02") et note l'heure (ex: "01:00").
@@ -77,6 +79,7 @@ Retourne UNIQUEMENT ce format JSON, sans aucun texte markdown (pas de \`\`\`json
   "rr": nombre de R:R planifié (ex: 2.64) ou null,
   "rr_realized": nombre de R:R réellement réalisé (ex: 2.64 si TP, -1 si SL, 0 si BE ou missed) ou null,
   "result": "win", "loss", "breakeven" ou "missed" ou null,
+  "missed_gap": nombre ou null, // Si le résultat est "missed", estime l'écart en pips ou points entre le prix le plus bas/haut atteint et le prix d'entrée
   "date_backtested": "date de début au format AAAA-MM-JJ (ex: 2026-04-02) ou null",
   "entry_time": "heure d'entrée au format HH:MM (ex: 01:00) ou null",
   "exit_time": "heure de sortie au format HH:MM (ex: 09:00) ou null",

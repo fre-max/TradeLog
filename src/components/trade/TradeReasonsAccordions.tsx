@@ -221,7 +221,7 @@ export function TradeReasonsAccordions({
 
             {/* ─── Liste des Raisons ──────────────────────────── */}
             {isOpen && (
-              <div className={cn("bg-bg border-t border-border2 p-3 space-y-1.5", hideHeader && "bg-transparent border-t-0 p-0")}>
+              <div className={cn("bg-surface2 border-t border-border2 p-3 space-y-1.5", hideHeader && "bg-transparent border-t-0 p-0")}>
                 {familyReasons.length === 0 ? (
                   <p className="text-xs text-txt3 py-2 px-1 text-center italic">
                     Aucune raison dans cette famille — va dans le Catalogue pour en ajouter.

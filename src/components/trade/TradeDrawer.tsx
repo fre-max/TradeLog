@@ -151,6 +151,7 @@ export function TradeDrawer() {
         rr_planned: res.rr ? String(res.rr) : prev.rr_planned,
         rr_realized: res.rr_realized != null ? String(res.rr_realized) : prev.rr_realized,
         result: res.result || prev.result,
+        missed_gap: res.missed_gap != null ? String(res.missed_gap) : prev.missed_gap,
         exit_type: res.result === 'win' ? 'tp' : (res.result === 'loss' ? 'sl' : (res.result === 'breakeven' ? 'breakeven' : prev.exit_type)),
       }))
 
