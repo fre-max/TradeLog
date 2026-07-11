@@ -20,7 +20,9 @@ interface UIState {
   // Drawer trade (création / édition)
   isNewTradeOpen: boolean
   editingTrade: TradeWithSteps | null
+  prefillData: any | null
   openNewTrade: () => void
+  openNewTradeWithPrefill: (prefill: any) => void
   openEditTrade: (trade: TradeWithSteps) => void
   closeNewTrade: () => void
 
@@ -46,9 +48,11 @@ export const useUIStore = create<UIState>((set) => ({
   // Drawer trade
   isNewTradeOpen: false,
   editingTrade: null,
-  openNewTrade: () => set({ isNewTradeOpen: true, editingTrade: null }),
-  openEditTrade: (trade) => set({ isNewTradeOpen: true, editingTrade: trade, isDetailOpen: false }),
-  closeNewTrade: () => set({ isNewTradeOpen: false, editingTrade: null }),
+  prefillData: null,
+  openNewTrade: () => set({ isNewTradeOpen: true, editingTrade: null, prefillData: null }),
+  openNewTradeWithPrefill: (prefill) => set({ isNewTradeOpen: true, editingTrade: null, prefillData: prefill }),
+  openEditTrade: (trade) => set({ isNewTradeOpen: true, editingTrade: trade, isDetailOpen: false, prefillData: null }),
+  closeNewTrade: () => set({ isNewTradeOpen: false, editingTrade: null, prefillData: null }),
 
   // Détail
   isDetailOpen: false,

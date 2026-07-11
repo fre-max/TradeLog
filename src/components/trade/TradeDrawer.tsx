@@ -28,6 +28,7 @@ export type { FormDataState }
 export function TradeDrawer() {
   const isNewTradeOpen = useUIStore((state) => state.isNewTradeOpen)
   const editingTrade = useUIStore((state) => state.editingTrade)
+  const prefillData = useUIStore((state) => state.prefillData)
   const closeNewTrade = useUIStore((state) => state.closeNewTrade)
   const openDetail = useUIStore((state) => state.openDetail)
   const openEditTrade = useUIStore((state) => state.openEditTrade)
@@ -95,11 +96,20 @@ export function TradeDrawer() {
     if (!isNewTradeOpen) return
 
     if (!editingTrade) {
-      setFormData(INITIAL_FORM_STATE)
+      if (prefillData) {
+        setFormData({
+          ...INITIAL_FORM_STATE,
+          ...prefillData,
+        })
+        setManualMode(true)
+        setSelectedStartType('bias') // Ouvre directement le formulaire pre-rempli
+      } else {
+        setFormData(INITIAL_FORM_STATE)
+        setManualMode(false)
+        setSelectedStartType(null)
+      }
       setStepIds({})
       setSelectedReasons([])
-      setManualMode(false)
-      setSelectedStartType(null)
       setTempIds({
         tradeId: crypto.randomUUID(),
         biais: crypto.randomUUID(),
@@ -108,7 +118,7 @@ export function TradeDrawer() {
         result: crypto.randomUUID(),
       })
     }
-  }, [isNewTradeOpen, editingTrade])
+  }, [isNewTradeOpen, editingTrade, prefillData])
 
   const handleClose = () => {
     if (!saving && !isUpdating && !isCreatingQuick && !analysantIA) {

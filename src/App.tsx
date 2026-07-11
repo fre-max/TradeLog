@@ -9,6 +9,7 @@ import Settings from '@/pages/Settings'
 import Auth from '@/pages/Auth'
 import Catalog from '@/pages/Catalog'
 import Playbook from '@/pages/Playbook'
+import Backtest from '@/pages/Backtest'
 import { ToastContainer } from '@/components/ui/Toast'
 import { BrouillonButton } from '@/components/trade/BrouillonButton'
 
@@ -87,6 +88,10 @@ export default function App() {
           <Route
             path="/playbook"
             element={session ? <Playbook /> : <Navigate to="/auth" replace />}
+          />
+          <Route
+            path="/backtest"
+            element={session ? <Backtest /> : <Navigate to="/auth" replace />}
           />
 
           {/* Auth — redirige vers / si déjà connecté */}

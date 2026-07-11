@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { icon: '📊', label: 'Statistiques', path: '/stats' },
   { icon: '📖', label: 'Playbook', path: '/playbook' },
   { icon: '📚', label: 'Catalogue raisons', path: '/catalog' },
+  { icon: '🔁', label: 'Backtesting', path: '/backtest' },
 ]
 
 export function Sidebar() {
