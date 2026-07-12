@@ -344,9 +344,10 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       .map((b) => ({ ...b, time: b.time as Time }));
     seriesRef.current.setData(donneesVisibles);
 
-    // Force le graphique à scroller pour centrer/montrer la dernière bougie
+    // Force le graphique à scroller en laissant une marge de 15 bougies sur la droite.
+    // Ainsi, la bougie active reste en place et le graphique se décale proprement vers la gauche.
     if (chartRef.current) {
-      chartRef.current.timeScale().scrollToPosition(0, false);
+      chartRef.current.timeScale().scrollToPosition(15, false);
     }
   }, [donneesCompletes, indexCourant]);
 
@@ -411,7 +412,10 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     }
 
     if (!activeTool || !chart || !series || !manager || !conteneur || !canvas) {
-      if (conteneur) conteneur.style.cursor = '';
+      if (conteneur) {
+        conteneur.style.cursor = '';
+        conteneur.style.touchAction = '';
+      }
       return;
     }
 
@@ -419,8 +423,9 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     if (!config) return;
 
     conteneur.style.cursor = 'crosshair';
+    conteneur.style.touchAction = 'none'; // Désactive le scroll de la page lors du tracé sur tablette
 
-    const eventToAncre = (event: MouseEvent) => {
+    const eventToAncre = (event: PointerEvent) => {
       const rect = conteneur.getBoundingClientRect();
       const px = event.clientX - rect.left;
       const py = event.clientY - rect.top;
@@ -430,13 +435,13 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       return { time, price, px, py };
     };
 
-    const gererMouvement = (event: MouseEvent) => {
+    const gererMouvement = (event: PointerEvent) => {
       const rect = conteneur.getBoundingClientRect();
       sourisPixelRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
       redessinerOverlay();
     };
 
-    const gererClic = (event: MouseEvent) => {
+    const gererClic = (event: PointerEvent) => {
       const ancre = eventToAncre(event);
       if (!ancre) return;
 
@@ -471,15 +476,15 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       }
     };
 
-    // Utilisation de la phase de capture (true) pour s'assurer d'intercepter les clics
-    // avant que la bibliothèque Lightweight Charts ou le DrawingManager ne les consomment.
-    conteneur.addEventListener('mousedown', gererClic, true);
-    conteneur.addEventListener('mousemove', gererMouvement, true);
+    // Utilisation de la phase de capture (true) et des PointerEvents pour unifier souris et tactile (tablette)
+    conteneur.addEventListener('pointerdown', gererClic, true);
+    conteneur.addEventListener('pointermove', gererMouvement, true);
 
     return () => {
-      conteneur.removeEventListener('mousedown', gererClic, true);
-      conteneur.removeEventListener('mousemove', gererMouvement, true);
+      conteneur.removeEventListener('pointerdown', gererClic, true);
+      conteneur.removeEventListener('pointermove', gererMouvement, true);
       conteneur.style.cursor = '';
+      conteneur.style.touchAction = '';
       ancresEnCoursRef.current = [];
       sourisPixelRef.current = null;
       redessinerOverlay();

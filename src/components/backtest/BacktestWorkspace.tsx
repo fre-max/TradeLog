@@ -285,18 +285,22 @@ export function BacktestWorkspace() {
           ))}
         </div>
 
-        {/* Sélection du nombre de bougies à charger */}
-        <select
-          value={limiteBougies}
-          onChange={(e) => setLimiteBougies(Number(e.target.value))}
-          className={`border-0 rounded px-2 py-1 text-[12px] font-medium outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
-          title="Nombre de bougies à charger"
-        >
-          <option value="100">100 bougies</option>
-          <option value="300">300 bougies</option>
-          <option value="500">500 bougies</option>
-          <option value="1000">1000 bougies</option>
-        </select>
+        {/* Saisie du nombre de bougies à charger */}
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[11px] ${C.textMuted}`}>Bougies :</span>
+          <input
+            type="number"
+            value={limiteBougies}
+            min={10}
+            max={1000}
+            onChange={(e) => {
+              const val = Math.max(10, Math.min(1000, Number(e.target.value)));
+              setLimiteBougies(val);
+            }}
+            className={`border-0 rounded px-2 py-1 text-[12px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] w-16 text-center ${C.select}`}
+            title="Nombre de bougies à charger (10 à 1000)"
+          />
+        </div>
 
         <button
           onClick={chargerBinance}

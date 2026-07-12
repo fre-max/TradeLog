@@ -31,7 +31,9 @@ export function Sidebar() {
   const navigate = useNavigate()
   const { data: strategies = [] } = useStrategies()
 
-  // Navigation vers une page + fermeture de la sidebar sur mobile
+  const estBacktest = location.pathname === '/backtest'
+
+  // Navigation vers une page + fermeture de la sidebar sur mobile/tablette
   const naviguerVers = (path: string) => {
     navigate(path)
     closeSidebar()
@@ -39,10 +41,13 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Backdrop mobile — visible uniquement quand la sidebar est ouverte */}
+      {/* Backdrop — visible uniquement quand la sidebar est ouverte (masqué sur desktop sauf en mode backtest) */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-[140] md:hidden"
+          className={cn(
+            "fixed inset-0 bg-black/60 z-[140] transition-opacity duration-300",
+            !estBacktest && "md:hidden"
+          )}
           onClick={closeSidebar}
         />
       )}
@@ -50,22 +55,24 @@ export function Sidebar() {
       <aside
         className={cn(
           'w-[220px] bg-surface border-r border-border flex flex-col py-5 flex-shrink-0',
-          // Mobile : fixed avec animation slide
+          // Mode tiroir par défaut (fixé à gauche avec transition slide)
           'fixed top-0 left-0 h-full z-[150] transition-transform duration-300',
-          // Desktop : relative, toujours visible
-          'md:relative md:translate-x-0',
-          // Mobile : slide in/out
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          // Mode permanent côte-à-côte uniquement sur desktop et hors backtest
+          !estBacktest && 'md:relative md:translate-x-0'
         )}
       >
-        {/* Logo + bouton fermer mobile */}
+        {/* Logo + bouton fermer */}
         <div className="flex items-center gap-2.5 px-4 pb-6">
           <div className="w-7 h-7 bg-accent rounded-md flex items-center justify-center text-white font-semibold text-xs">TL</div>
           <span className="text-txt font-semibold text-[15px] tracking-tight flex-1">TradeLog</span>
-          {/* Bouton fermer visible uniquement sur mobile */}
+          {/* Bouton fermer visible sur mobile, et sur desktop uniquement pour le backtest */}
           <button
             onClick={closeSidebar}
-            className="md:hidden text-txt3 hover:text-txt text-lg leading-none"
+            className={cn(
+              "text-txt3 hover:text-txt text-lg leading-none",
+              !estBacktest && "md:hidden"
+            )}
           >
             ✕
           </button>

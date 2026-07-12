@@ -1,7 +1,7 @@
 import { useUIStore } from '@/store'
 import { useTrades } from '@/hooks/useTrades'
 import { cn } from '@/lib/utils'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 
 // ─── Topbar ───────────────────────────────────────────────
 // Barre horizontale en haut avec :
@@ -21,6 +21,9 @@ export function Topbar({ title, onMenuClick, showBack }: TopbarProps) {
   const openNewTrade = useUIStore((state) => state.openNewTrade)
   const { data: trades = [] } = useTrades()
   const navigate = useNavigate()
+  const location = useLocation()
+  
+  const estBacktest = location.pathname === '/backtest'
 
   console.log('🔝 [Topbar] Rendu du composant')
 
@@ -46,9 +49,12 @@ export function Topbar({ title, onMenuClick, showBack }: TopbarProps) {
           <span className="hidden sm:inline">Retour</span>
         </button>
       ) : (
-        // Burger mobile — uniquement sur les pages normales
+        // Burger mobile — uniquement sur les pages normales (et visible sur desktop sur la page backtest)
         <button
-          className="md:hidden text-txt2 text-xl"
+          className={cn(
+            "text-txt2 text-xl hover:opacity-80 transition-opacity",
+            !estBacktest && "md:hidden"
+          )}
           onClick={onMenuClick}
         >
           ☰
