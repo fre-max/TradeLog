@@ -588,6 +588,15 @@ export function BacktestWorkspace() {
 
         {/* ── Contrôles Replay ── */}
         <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => setOutilActif(outilActif === 'replay-cut' ? null : 'replay-cut')}
+            title="Mode Replay — Cliquer sur une bougie du graphique pour démarrer le backtest à partir de ce point"
+            className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-colors
+              ${outilActif === 'replay-cut' ? C.btnActive : C.btnBase}`}
+          >
+            ✂️
+          </button>
+
           <button onClick={revenirDebut} title="Retour au début"
             className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-sm ${C.btnBase}`}>⏮</button>
 

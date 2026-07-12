@@ -20,6 +20,7 @@ import {
   ExtendedLine,
 } from '@/lib/lightweight-charts-drawing-custom';
 import { useBacktestStore, type PositionSimulee } from '@/store/backtestStore';
+import { useUIStore } from '@/store';
 
 // ─── 🛠️ Seuils de détection tactile élargis ──────────────────────────────────
 // 30px de tolérance au lieu de 5px par défaut pour faciliter la sélection au doigt.
@@ -111,6 +112,11 @@ const CONFIG_OUTILS: Record<string, {
       '③ Take Profit : cliquez sur votre Take Profit (en-dessous)',
     ],
     couleurPreview: '#ef5350',
+  },
+  'replay-cut': {
+    ancres: 1,
+    instructions: ['✂️ Cliquez sur une bougie pour démarrer le replay à partir de ce point'],
+    couleurPreview: '#f59e0b',
   },
 };
 
@@ -1003,6 +1009,25 @@ export const BacktestChart = React.forwardRef<
     };
 
     const gererClic = (event: PointerEvent) => {
+      // ✂️ Si l'outil actif est le découpage du replay
+      if (activeTool === 'replay-cut') {
+        const rect = conteneur.getBoundingClientRect();
+        const px = event.clientX - rect.left;
+        const logical = chart.timeScale().coordinateToLogical(px);
+        if (logical !== null) {
+          const targetIndex = Math.round(logical);
+          if (targetIndex >= 0 && targetIndex < stateRef.current.donneesCompletes.length) {
+            console.log(`✂️ [BacktestChart] Clic pour couper le replay à l'index ${targetIndex}`);
+            useBacktestStore.getState().couperReplayAIndex(targetIndex);
+            useUIStore.getState().addToast('Point de départ du backtest repositionné avec succès !', 'success');
+          }
+        }
+        if (onDrawingComplete) {
+          onDrawingComplete();
+        }
+        return;
+      }
+
       const ancre = eventToAncre(event);
       if (!ancre) return;
 

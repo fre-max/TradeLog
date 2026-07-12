@@ -55,6 +55,7 @@ interface BacktestState {
   fermerPositionManuellement: () => void;
   supprimerTradeHistorique: (index: number) => void;
   reinitialiserSession: () => void;
+  couperReplayAIndex: (index: number) => void;
 }
 
 export const useBacktestStore = create<BacktestState>((set, get) => ({
@@ -256,6 +257,20 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       actif: 'Aucun actif',
       donneesCompletes: [],
       indexCourant: 0,
+      estEnLecture: false,
+      positionActive: null,
+      historiqueSimule: [],
+    });
+  },
+
+  // Repositionne le début du replay à un index donné, nettoyant la session en cours
+  // Exemple d'utilisation : couperReplayAIndex(250)
+  couperReplayAIndex: (index) => {
+    const { donneesCompletes } = get();
+    const indexValide = Math.max(0, Math.min(index, donneesCompletes.length - 1));
+    console.log(`✂️ [Backtest Store] Replay positionné à la bougie index ${indexValide}`);
+    set({
+      indexCourant: indexValide,
       estEnLecture: false,
       positionActive: null,
       historiqueSimule: [],
