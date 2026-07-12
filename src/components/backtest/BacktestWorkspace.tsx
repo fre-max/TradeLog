@@ -4,6 +4,8 @@ import { recupererDonneesBinance, parserCsvPrix } from '@/lib/chartDataHelper';
 import { BacktestChart } from './BacktestChart';
 import { useUIStore } from '@/store';
 import type { PositionSimulee } from '@/store/backtestStore';
+import { supabase } from '@/lib/supabase';
+import { uploadImage } from '@/lib/storage';
 
 // ─── Définition de tous les outils de la barre latérale ───────────────────────
 // Chaque outil correspond exactement au type string attendu par getToolRegistry().createDrawing()
@@ -109,6 +111,22 @@ export function BacktestWorkspace() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Référence pour appeler les méthodes de capture du graphique
+  const chartRef = useRef<{ takeScreenshot: () => Promise<Blob | null> } | null>(null);
+  // ID unique du trade en cours d'exportation pour afficher un spinner
+  const [exportantTradeId, setExportantTradeId] = useState<string | null>(null);
+
+  // Gère l'affichage du menu déroulant de capture d'écran
+  const [menuCaptureOuvert, setMenuCaptureOuvert] = useState(false);
+  // Indique si une capture d'écran manuelle est en cours d'upload
+  const [capturantManuel, setCapturantManuel] = useState(false);
+  // Référence pour le conteneur du menu (permet de détecter les clics extérieurs)
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Référence pour le bouton de l'appareil photo
+  const boutonRef = useRef<HTMLButtonElement>(null);
+  // Position calculée à l'écran pour le menu déroulant fixe (évite l'overflow du header)
+  const [positionMenu, setPositionMenu] = useState<{ top: number; right: number } | null>(null);
+
   // Détection de la largeur de la fenêtre pour la réactivité mobile
   const [largeurFenetre, setLargeurFenetre] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
@@ -118,6 +136,29 @@ export function BacktestWorkspace() {
     window.addEventListener('resize', gererResize);
     return () => window.removeEventListener('resize', gererResize);
   }, []);
+
+  // Ferme le menu déroulant de capture d'écran lorsqu'on clique à l'extérieur de celui-ci
+  useEffect(() => {
+    console.log('🔌 [Workspace] Effect ClicExtérieur : menuCaptureOuvert =', menuCaptureOuvert);
+    const gererClicExterieur = (evenement: MouseEvent) => {
+      console.log('🖱️ [Workspace] Clic détecté sur le document, cible :', evenement.target);
+      if (menuRef.current) {
+        const estInterieur = menuRef.current.contains(evenement.target as Node);
+        console.log('🖱️ [Workspace] Clic à l\'intérieur du menu ?', estInterieur);
+        if (!estInterieur) {
+          console.log('❌ [Workspace] Clic extérieur détecté → Fermeture du menu');
+          setMenuCaptureOuvert(false);
+        }
+      }
+    };
+    if (menuCaptureOuvert) {
+      document.addEventListener('mousedown', gererClicExterieur);
+    }
+    return () => {
+      console.log('🔌 [Workspace] Nettoyage Effect ClicExtérieur');
+      document.removeEventListener('mousedown', gererClicExterieur);
+    };
+  }, [menuCaptureOuvert]);
 
   const estMobile = largeurFenetre < 768;
 
@@ -228,7 +269,33 @@ export function BacktestWorkspace() {
   };
 
   // ─── Export d'un trade simulé vers le formulaire du Journal ─────────────────
-  const exporterVersJournal = (trade: PositionSimulee) => {
+  // Prend automatiquement une capture d'écran combinée (graphique + overlay)
+  // et l'associe directement à l'étape "Entrée" du trade créé.
+  const exporterVersJournal = async (trade: PositionSimulee) => {
+    const tradeUid = `${trade.dateEntree}-${trade.prixEntree}`;
+    setExportantTradeId(tradeUid);
+
+    let imageUrlPublic = '';
+    try {
+      if (chartRef.current) {
+        const blob = await chartRef.current.takeScreenshot();
+        if (blob) {
+          console.log('📡 [Backtest] Upload de la capture d\'écran vers Supabase Storage...');
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error('Utilisateur non connecté');
+
+          const path = `trade_images/${user.id}/${Date.now()}-backtest.jpg`;
+          imageUrlPublic = await uploadImage(blob, path);
+          console.log('✅ [Backtest] Capture d\'écran uploadée ! URL :', imageUrlPublic);
+        }
+      }
+    } catch (err) {
+      console.error('❌ [Backtest] Échec de la génération ou de l\'upload de la capture :', err);
+      addToast('Impossible de générer ou d\'uploader la capture du graphique. Le trade sera pré-rempli sans image.', 'info');
+    } finally {
+      setExportantTradeId(null);
+    }
+
     const dateTexte = typeof trade.dateEntree === 'number'
       ? new Date(trade.dateEntree * 1000).toISOString().split('T')[0]
       : String(trade.dateEntree).split('T')[0];
@@ -237,6 +304,14 @@ export function BacktestWorkspace() {
     const risque = Math.abs(trade.prixEntree - trade.stopLoss);
     const rr = risque > 0 ? (gain / risque).toFixed(2) : '1.00';
     const rrRealise = trade.resultat === 'win' ? rr : trade.resultat === 'loss' ? '-1.00' : '0';
+
+    // Prépare les images de l'étape "Prise de Position & Entrée" en phase "Avant"
+    const capturesEntree = imageUrlPublic ? [{
+      id: crypto.randomUUID(),
+      url: imageUrlPublic,
+      source: 'upload' as const,
+      phase: 'avant' as const
+    }] : [];
 
     openNewTradeWithPrefill({
       pair: actif,
@@ -250,9 +325,104 @@ export function BacktestWorkspace() {
       result: trade.resultat,
       exit_type: trade.resultat === 'win' ? 'tp' : trade.resultat === 'loss' ? 'sl' : 'breakeven',
       journal_type: 'global',
+      entry_images: capturesEntree,
     });
 
-    addToast('Formulaire du Journal pré-rempli avec les données du backtest !', 'success');
+    addToast('Formulaire du Journal pré-rempli avec les données et le graphique du backtest !', 'success');
+  };
+
+  // ─── Capture manuelle à la volée ─────────────────────────────────────────────
+  // Permet à l'utilisateur de prendre une capture d'écran du graphique à tout moment
+  // et de l'associer directement à la bonne section (Biais, POI ou Entrée).
+  // Cela permet par exemple d'enregistrer des analyses de Biais HTF au tout début du trade.
+  const effectuerCaptureManuelle = async (cible: 'biais' | 'poi' | 'entry_avant' | 'entry_apres') => {
+    console.log('🚀 [Workspace] ① effectuerCaptureManuelle démarrée, cible =', cible);
+    setMenuCaptureOuvert(false);
+    setCapturantManuel(true);
+
+    let imageUrlPublic = '';
+    try {
+      console.log('🚀 [Workspace] ② chartRef.current =', chartRef.current ? 'OK' : 'NULL ❌');
+      if (chartRef.current) {
+        console.log('🚀 [Workspace] ③ Appel takeScreenshot()...');
+        const blob = await chartRef.current.takeScreenshot();
+        console.log('🚀 [Workspace] ④ blob =', blob ? `OK (${blob.size} octets)` : 'NULL ❌');
+        if (blob) {
+          console.log('🚀 [Workspace] ⑤ Récupération user Supabase...');
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          console.log('🚀 [Workspace] ⑥ user =', user?.id ?? 'NULL ❌', '| error =', userError);
+          if (!user) throw new Error('Utilisateur non connecté');
+
+          const path = `trade_images/${user.id}/${Date.now()}-backtest.jpg`;
+          console.log('🚀 [Workspace] ⑦ Upload vers path :', path);
+          imageUrlPublic = await uploadImage(blob, path);
+          console.log('🚀 [Workspace] ⑧ Upload terminé ! URL :', imageUrlPublic);
+        } else {
+          console.warn('⚠️ [Workspace] blob null → on continue SANS image');
+        }
+      } else {
+        console.warn('⚠️ [Workspace] chartRef.current NULL → pas de capture');
+      }
+    } catch (err) {
+      console.error('❌ [Backtest] Échec de la capture manuelle :', err);
+      addToast('Impossible de générer ou d\'uploader la capture.', 'error');
+      setCapturantManuel(false);
+      return;
+    }
+
+    setCapturantManuel(false);
+    console.log('🚀 [Workspace] ⑨ Construction du prefillData...');
+
+    // Initialisation du formulaire pré-rempli avec les champs de base requis
+    const localPrefill: any = {
+      pair: actif !== 'Aucun actif' ? actif : symbole,
+      date_backtested: new Date().toISOString().split('T')[0],
+      journal_type: 'global',
+    };
+
+    // Si une position est actuellement ouverte ou tracée, on l'utilise pour pré-remplir la direction et les prix
+    if (positionActive) {
+      localPrefill.direction = positionActive.direction;
+      localPrefill.entry_price = positionActive.prixEntree.toFixed(5);
+      localPrefill.entry_sl = positionActive.stopLoss.toFixed(5);
+      localPrefill.entry_tp = positionActive.takeProfit.toFixed(5);
+      
+      const gain = Math.abs(positionActive.takeProfit - positionActive.prixEntree);
+      const risque = Math.abs(positionActive.prixEntree - positionActive.stopLoss);
+      localPrefill.rr_planned = risque > 0 ? (gain / risque).toFixed(2) : '1.00';
+    }
+
+    // Objet image conforme aux schémas d'images d'étapes
+    const imageElement = {
+      id: crypto.randomUUID(),
+      url: imageUrlPublic,
+      source: 'upload' as const,
+      phase: (cible === 'entry_apres' ? 'apres' as const : 'avant' as const),
+    };
+
+    // Selon la cible choisie, on injecte l'image dans le bon tableau et configure le type de journal
+    if (cible === 'biais') {
+      localPrefill.journal_type = 'bias';
+      localPrefill.biais_images = [imageElement];
+    } else if (cible === 'poi') {
+      localPrefill.journal_type = 'poi';
+      localPrefill.poi_images = [imageElement];
+    } else if (cible === 'entry_avant') {
+      localPrefill.journal_type = 'confirmation';
+      localPrefill.entry_images = [imageElement];
+    } else if (cible === 'entry_apres') {
+      localPrefill.journal_type = 'global';
+      localPrefill.entry_images = [imageElement];
+      if (positionActive?.prixSortie) {
+        localPrefill.result = positionActive.resultat;
+      }
+    }
+
+    console.log('🚀 [Workspace] ⑩ prefillData :', localPrefill);
+    console.log('🚀 [Workspace] ⑪ Appel openNewTradeWithPrefill...');
+    openNewTradeWithPrefill(localPrefill);
+    console.log('🚀 [Workspace] ⑫ TERMINÉ ✅');
+    addToast('Capture d\'écran chargée ! Complète les détails du trade.', 'success');
   };
 
   // ─── Calcul du PnL flottant de la position active ────────────────────────────
@@ -384,6 +554,81 @@ export function BacktestWorkspace() {
 
         <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
+        {/* ── Bouton Capture d'Écran Manuel ── */}
+        <div ref={menuRef} className="relative flex-shrink-0">
+          <button
+            ref={boutonRef}
+            onClick={(evenement) => {
+              // Empêche la propagation du clic pour éviter que le listener global sur document
+              // ne referme immédiatement le menu qui vient de s'ouvrir.
+              evenement.stopPropagation();
+              const rect = boutonRef.current?.getBoundingClientRect();
+              if (rect) {
+                // Calcule le positionnement fixed pour que le menu s'affiche
+                // juste en dessous du bouton, par-dessus l'overflow du header.
+                setPositionMenu({
+                  top: rect.bottom + window.scrollY + 6,
+                  right: window.innerWidth - rect.right - window.scrollX,
+                });
+              }
+              console.log('📸 [Bouton] Clic détecté, bascule menu de', menuCaptureOuvert, 'à', !menuCaptureOuvert);
+              setMenuCaptureOuvert(!menuCaptureOuvert);
+            }}
+            disabled={capturantManuel}
+            title="Prendre une capture d'écran du graphique"
+            className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-base relative ${C.btnBase} ${menuCaptureOuvert ? 'bg-[#2a2e39] text-[#2962ff]' : ''}`}
+          >
+            {capturantManuel ? (
+              <span className="w-4 h-4 border-2 border-[#2962ff]/20 border-t-[#2962ff] rounded-full animate-spin"></span>
+            ) : (
+              '📸'
+            )}
+          </button>
+
+          {menuCaptureOuvert && (
+            /* Menu déroulant - positionné en fixed pour outrepasser l'overflow-x-auto du header parent */
+            <div 
+              style={{
+                position: 'fixed',
+                top: positionMenu?.top ?? 0,
+                right: positionMenu?.right ?? 0,
+              }}
+              className={`w-52 rounded-lg border shadow-xl z-[999] py-1.5 text-xs font-medium flex flex-col transition-all animate-fadeIn
+                ${theme === 'dark' ? 'bg-[#1e222d] border-[#2a2e39] text-[#d1d4dc]' : 'bg-white border-[#e0e3eb] text-[#131722]'}`}
+            >
+              <div className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b ${theme === 'dark' ? 'text-[#787b86] border-[#2a2e39]' : 'text-[#9598a1] border-[#e0e3eb]'}`}>
+                Où envoyer la capture ?
+              </div>
+              <button
+                onClick={() => effectuerCaptureManuelle('biais')}
+                className={`px-3 py-2 text-left transition-colors flex items-center gap-2 ${theme === 'dark' ? 'hover:bg-[#2a2e39]' : 'hover:bg-[#f0f3fa]'}`}
+              >
+                <span className="text-[14px]">🧭</span> Biais de Marché (Avant)
+              </button>
+              <button
+                onClick={() => effectuerCaptureManuelle('poi')}
+                className={`px-3 py-2 text-left transition-colors flex items-center gap-2 ${theme === 'dark' ? 'hover:bg-[#2a2e39]' : 'hover:bg-[#f0f3fa]'}`}
+              >
+                <span className="text-[14px]">🎯</span> Zone d'Intérêt POI (Avant)
+              </button>
+              <button
+                onClick={() => effectuerCaptureManuelle('entry_avant')}
+                className={`px-3 py-2 text-left transition-colors flex items-center gap-2 ${theme === 'dark' ? 'hover:bg-[#2a2e39]' : 'hover:bg-[#f0f3fa]'}`}
+              >
+                <span className="text-[14px]">⚡</span> Prise de Position (Avant)
+              </button>
+              <button
+                onClick={() => effectuerCaptureManuelle('entry_apres')}
+                className={`px-3 py-2 text-left transition-colors flex items-center gap-2 border-t ${theme === 'dark' ? 'hover:bg-[#2a2e39] border-[#2a2e39]' : 'hover:bg-[#f0f3fa] border-[#e0e3eb]'}`}
+              >
+                <span className="text-[14px]">🔴</span> Résultat / Sortie (Après)
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
+
         {/* ── Bouton Thème (Clair / Sombre) ── */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -446,7 +691,14 @@ export function BacktestWorkspace() {
               ⚠️ {erreur}
             </div>
           )}
-          <BacktestChart activeTool={outilActif} height={hauteurGraphique} theme={theme} timeframe={timeframe} />
+          <BacktestChart
+            ref={chartRef}
+            activeTool={outilActif}
+            onDrawingComplete={() => setOutilActif(null)}
+            height={hauteurGraphique}
+            theme={theme}
+            timeframe={timeframe}
+          />
         </div>
 
         {/* ─── PANEL DROIT : Position active + Historique ─── */}
@@ -550,12 +802,26 @@ export function BacktestWorkspace() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => exporterVersJournal(trade)}
-                          className="flex-1 py-1.5 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[10px] font-bold rounded transition-colors"
-                        >
-                          Enregistrer dans le Journal
-                        </button>
+                        {(() => {
+                          const tradeUid = `${trade.dateEntree}-${trade.prixEntree}`;
+                          const estEnExport = exportantTradeId === tradeUid;
+                          return (
+                            <button
+                              onClick={() => exporterVersJournal(trade)}
+                              disabled={exportantTradeId !== null}
+                              className="flex-1 py-1.5 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[10px] font-bold rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                              {estEnExport ? (
+                                <>
+                                  <span className="w-3.5 h-3.5 border border-white/20 border-t-white rounded-full animate-spin"></span>
+                                  Capture du graphique...
+                                </>
+                              ) : (
+                                'Enregistrer dans le Journal'
+                              )}
+                            </button>
+                          );
+                        })()}
                         <button
                           onClick={() => supprimerTradeHistorique(realIdx)}
                           className={`w-7 h-7 flex items-center justify-center rounded transition-colors text-xs ${C.btnBase} hover:text-[#ef5350]`}

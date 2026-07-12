@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
 import {
   createChart,
   ColorType,
@@ -115,6 +115,7 @@ const CONFIG_OUTILS: Record<string, {
 
 interface BacktestChartProps {
   activeTool: string | null;
+  onDrawingComplete?: () => void; // Rappelé une fois le tracé terminé pour repasser au curseur
   height: number;
   theme: 'dark' | 'light';
   timeframe: string;
@@ -125,7 +126,10 @@ const THEMES = {
   light: { background: '#ffffff', text: '#131722', grid: '#f0f3fa' },
 };
 
-export function BacktestChart({ activeTool, height, theme, timeframe }: BacktestChartProps) {
+export const BacktestChart = React.forwardRef<
+  { takeScreenshot: () => Promise<Blob | null> },
+  BacktestChartProps
+>(({ activeTool, onDrawingComplete, height, theme, timeframe }, ref) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -137,6 +141,57 @@ export function BacktestChart({ activeTool, height, theme, timeframe }: Backtest
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const managerRef = useRef<DrawingManager | null>(null);
+
+  // Expose la méthode de capture d'écran au composant parent (BacktestWorkspace)
+  useImperativeHandle(ref, () => ({
+    takeScreenshot: (): Promise<Blob | null> => {
+      console.log('📸 [BacktestChart] ① DÉBUT takeScreenshot appelé');
+      return new Promise((resolve) => {
+        const chart = chartRef.current;
+        console.log('📸 [BacktestChart] ② chartRef.current =', chart ? 'OK (instance présente)' : 'NULL ❌');
+        if (!chart) {
+          console.warn('⚠️ [BacktestChart] Graphique non disponible → resolve(null)');
+          resolve(null);
+          return;
+        }
+
+        // Légère pause pour s'assurer que le graphique a fini de rendre
+        console.log('📸 [BacktestChart] ③ Attente 100ms avant capture...');
+        setTimeout(() => {
+          console.log('📸 [BacktestChart] ④ Appel chart.takeScreenshot() natif...');
+          try {
+            const chartCanvas = chart.takeScreenshot();
+            console.log('📸 [BacktestChart] ⑤ chartCanvas =', chartCanvas ? `OK (${chartCanvas.width}×${chartCanvas.height})` : 'NULL ❌');
+            if (!chartCanvas) {
+              console.warn('⚠️ [BacktestChart] Échec capture native → resolve(null)');
+              resolve(null);
+              return;
+            }
+
+            console.log('📸 [BacktestChart] ⑥ Appel toBlob() pour convertir en JPEG...');
+            chartCanvas.toBlob(
+              (blob) => {
+                console.log('📸 [BacktestChart] ⑦ toBlob callback → blob =', blob ? `OK (${blob.size} octets)` : 'NULL ❌');
+                if (blob) {
+                  console.log('✅ [BacktestChart] ⑧ Screenshot SUCCÈS ! Taille :', blob.size, 'octets');
+                  resolve(blob);
+                } else {
+                  console.warn('⚠️ [BacktestChart] toBlob a renvoyé null → resolve(null)');
+                  resolve(null);
+                }
+              },
+              'image/jpeg',
+              0.85
+            );
+            console.log('📸 [BacktestChart] ⑦ toBlob() lancé, en attente du callback...');
+          } catch (err) {
+            console.error('❌ [BacktestChart] Exception lors de la capture :', err);
+            resolve(null);
+          }
+        }, 100);
+      });
+    }
+  }));
 
   // État outil de dessin bibliothèque
   const [etapeActuelle, setEtapeActuelle] = useState(0);
@@ -844,6 +899,30 @@ export function BacktestChart({ activeTool, height, theme, timeframe }: Backtest
     }
   }, [donneesCompletes, indexCourant]);
 
+  // Désactive temporairement le défilement et le zoom du graphique de Lightweight Charts
+  // pendant qu'une poignée de position custom est en train d'être déplacée (dragAction actif).
+  // Cela évite que le graphique ne bouge en arrière-plan en même temps que le doigt de l'utilisateur sur tablette.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (dragAction !== null) {
+      console.log('🔒 [BacktestChart] Désactivation du scroll graphique pour modification de position');
+      chart.applyOptions({
+        handleScroll: false,
+        handleScale: false,
+      });
+    } else {
+      console.log('🔓 [BacktestChart] Réactivation du scroll graphique');
+      chart.applyOptions({
+        handleScroll: true,
+        handleScale: true,
+      });
+    }
+  }, [dragAction]);
+
+
+
   // Suppression clavier (dessins bibliothèque ET positions canvas)
   useEffect(() => {
     const gererTouche = (e: KeyboardEvent) => {
@@ -989,6 +1068,11 @@ export function BacktestChart({ activeTool, height, theme, timeframe }: Backtest
         setEtapeActuelle(0);
         sourisPixelRef.current = null;
         redessinerOverlay();
+
+        // Réinitialise l'outil actif vers le curseur après une utilisation unique
+        if (onDrawingComplete) {
+          onDrawingComplete();
+        }
       }
     };
 
@@ -1016,7 +1100,7 @@ export function BacktestChart({ activeTool, height, theme, timeframe }: Backtest
       sourisPixelRef.current = null;
       redessinerOverlay();
     };
-  }, [activeTool, detecterClicPositionCanvas, redessinerOverlay]);
+  }, [activeTool, detecterClicPositionCanvas, redessinerOverlay, onDrawingComplete]);
 
   // Gestion du clic en mode curseur (null) pour sélectionner les positions canvas
   useEffect(() => {
@@ -1113,4 +1197,4 @@ export function BacktestChart({ activeTool, height, theme, timeframe }: Backtest
       </div>
     </div>
   );
-}
+});
