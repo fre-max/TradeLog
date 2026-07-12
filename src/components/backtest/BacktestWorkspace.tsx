@@ -27,8 +27,8 @@ const OUTILS_TRACAGE = [
     { id: 'fib-retracement', label: 'FIB',   title: 'Fibonacci Retracement — 2 clics : sommet puis creux (ou inverse)' },
   ]},
   { group: 'Trading', items: [
-    { id: 'long-position',   label: 'LONG',  title: 'Position Long ▲ — 3 clics : 1. Entrée  2. Take Profit  3. Stop Loss' },
-    { id: 'short-position',  label: 'SHORT', title: 'Position Short ▼ — 3 clics : 1. Entrée  2. Stop Loss  3. Take Profit' },
+    { id: 'pos-long',  label: 'LONG',  title: 'Position Long ▲ — 3 clics : ① Entrée  ② Stop Loss  ③ Take Profit' },
+    { id: 'pos-short', label: 'SHORT', title: 'Position Short ▼ — 3 clics : ① Entrée  ② Stop Loss  ③ Take Profit' },
   ]},
 ];
 
@@ -109,8 +109,24 @@ export function BacktestWorkspace() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Hauteur du graphique : plus grande en mode plein écran
-  const hauteurGraphique = estPleinEcran ? window.innerHeight - 120 : 500;
+  // Détection de la largeur de la fenêtre pour la réactivité mobile
+  const [largeurFenetre, setLargeurFenetre] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    // Met à jour la largeur de la fenêtre lors du redimensionnement
+    const gererResize = () => setLargeurFenetre(window.innerWidth);
+    window.addEventListener('resize', gererResize);
+    return () => window.removeEventListener('resize', gererResize);
+  }, []);
+
+  const estMobile = largeurFenetre < 768;
+
+  // Hauteur du graphique : plus grande en plein écran, réduite à 350px sur mobile
+  const hauteurGraphique = estPleinEcran
+    ? window.innerHeight - 120
+    : estMobile
+      ? 350
+      : 500;
 
   // Classes CSS calculées selon le thème courant
   const C = getThemeClasses(theme);
@@ -260,19 +276,19 @@ export function BacktestWorkspace() {
       {/* ══════════════════════════════════════════════════════════ */}
       {/* BARRE SUPÉRIEURE — style TradingView Header               */}
       {/* ══════════════════════════════════════════════════════════ */}
-      <div className={`flex items-center gap-2 px-4 h-12 border-b flex-shrink-0 ${C.bgHeader}`}>
+      <div className={`flex items-center gap-2 px-4 h-12 border-b flex-shrink-0 overflow-x-auto whitespace-nowrap scrollbar-none ${C.bgHeader}`}>
 
         {/* Sélection de l'actif */}
         <select
           value={symbole}
           onChange={(e) => setSymbole(e.target.value)}
-          className={`border-0 rounded px-2 py-1 text-[13px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
+          className={`flex-shrink-0 border-0 rounded px-2 py-1 text-[13px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
         >
           {ACTIFS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
         </select>
 
         {/* Boutons Timeframe */}
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-0.5 flex-shrink-0">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.value}
@@ -286,7 +302,7 @@ export function BacktestWorkspace() {
         </div>
 
         {/* Saisie du nombre de bougies à charger */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className={`text-[11px] ${C.textMuted}`}>Bougies :</span>
           <input
             type="number"
@@ -305,36 +321,36 @@ export function BacktestWorkspace() {
         <button
           onClick={chargerBinance}
           disabled={chargement}
-          className="px-3 py-1 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[12px] font-semibold rounded disabled:opacity-50 transition-colors"
+          className="flex-shrink-0 px-3 py-1 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[12px] font-semibold rounded disabled:opacity-50 transition-colors"
         >
           {chargement ? '⌛' : 'Charger'}
         </button>
 
-        <div className={`h-5 w-px ${C.separator}`} />
+        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
         {/* Import CSV */}
         <input type="file" accept=".csv" ref={fileInputRef} onChange={gererCsv} className="hidden" />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className={`px-3 py-1 text-[12px] font-medium rounded transition-colors flex items-center gap-1.5 ${C.btnBase}`}
+          className={`flex-shrink-0 px-3 py-1 text-[12px] font-medium rounded transition-colors flex items-center gap-1.5 ${C.btnBase}`}
         >
           📁 CSV
         </button>
 
-        <div className="flex-1" />
+        <div className="hidden md:block flex-1" />
 
         {/* Infos bougie courante */}
         {donneesCompletes.length > 0 && (
-          <div className={`text-[12px] font-mono ${C.textMuted}`}>
-            <span className={`font-semibold ${C.textNormal}`}>{actif}</span>
-            <span className="ml-2">Bougie {indexCourant + 1}/{donneesCompletes.length}</span>
+          <div className={`text-[12px] font-mono flex-shrink-0 whitespace-nowrap ${C.textMuted}`}>
+            <span className={`font-semibold hidden sm:inline ${C.textNormal}`}>{actif}</span>
+            <span className="sm:ml-2">Bougie {indexCourant + 1}/{donneesCompletes.length}</span>
           </div>
         )}
 
-        <div className={`h-5 w-px ${C.separator}`} />
+        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
         {/* ── Contrôles Replay ── */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
           <button onClick={revenirDebut} title="Retour au début"
             className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-sm ${C.btnBase}`}>⏮</button>
 
@@ -366,13 +382,13 @@ export function BacktestWorkspace() {
           </select>
         </div>
 
-        <div className={`h-5 w-px ${C.separator}`} />
+        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
         {/* ── Bouton Thème (Clair / Sombre) ── */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           title={theme === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre'}
-          className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-base ${C.btnBase}`}
+          className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded transition-colors text-base ${C.btnBase}`}
         >
           {theme === 'dark' ? '☀️' : '🌙'}
         </button>
@@ -381,7 +397,7 @@ export function BacktestWorkspace() {
         <button
           onClick={() => setEstPleinEcran(!estPleinEcran)}
           title={estPleinEcran ? 'Quitter le plein écran (Esc)' : 'Plein écran'}
-          className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-base ${C.btnBase}`}
+          className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded transition-colors text-base ${C.btnBase}`}
         >
           {estPleinEcran ? '⊡' : '⊞'}
         </button>
@@ -390,10 +406,11 @@ export function BacktestWorkspace() {
       {/* ══════════════════════════════════════════════════════════ */}
       {/* CORPS PRINCIPAL : Toolbar Gauche + Graphique + Panel Droit */}
       {/* ══════════════════════════════════════════════════════════ */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden">
 
-        {/* ─── BARRE D'OUTILS VERTICALE GAUCHE (style TradingView) ─── */}
-        <div className={`w-14 flex flex-col items-center pt-2 gap-0.5 border-r flex-shrink-0 overflow-y-auto ${C.bgSidebar}`}>
+        {/* ─── BARRE D'OUTILS DE TRACAGE (style TradingView) ─── */}
+        {/* Horizontale et défilante sur mobile, verticale sur écran moyen (md) */}
+        <div className={`w-full md:w-14 h-12 md:h-auto flex flex-row md:flex-col items-center p-1.5 md:pt-2 gap-1 md:gap-0.5 border-b md:border-b-0 md:border-r flex-shrink-0 overflow-x-auto md:overflow-y-auto scrollbar-none ${C.bgSidebar}`}>
           {OUTILS_TRACAGE.map((groupe) => (
             <React.Fragment key={groupe.group}>
               {groupe.items.map((outil) => {
@@ -403,7 +420,7 @@ export function BacktestWorkspace() {
                     key={String(outil.id)}
                     onClick={() => setOutilActif(estActif ? null : outil.id)}
                     title={outil.title}
-                    className={`w-12 h-9 flex flex-col items-center justify-center rounded text-[9px] font-bold tracking-tight transition-all leading-tight px-0.5
+                    className={`w-10 md:w-12 h-8 md:h-9 flex flex-col items-center justify-center rounded text-[9px] font-bold tracking-tight transition-all leading-tight px-0.5 flex-shrink-0
                       ${estActif ? C.btnActive : C.btnBase}`}
                   >
                     {/* Icône SVG pour le curseur, texte pour les autres */}
@@ -417,23 +434,24 @@ export function BacktestWorkspace() {
                   </button>
                 );
               })}
-              <div className={`w-8 h-px my-1 ${C.separator}`} />
+              <div className={`w-px md:w-8 h-6 md:h-px mx-1 md:mx-0 my-0 md:my-1 flex-shrink-0 ${C.separator}`} />
             </React.Fragment>
           ))}
         </div>
 
         {/* ─── GRAPHIQUE PRINCIPAL ─── */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex-shrink-0">
           {erreur && (
             <div className={`border-b text-xs px-4 py-2 ${C.errBg}`}>
               ⚠️ {erreur}
             </div>
           )}
-          <BacktestChart activeTool={outilActif} height={hauteurGraphique} theme={theme} />
+          <BacktestChart activeTool={outilActif} height={hauteurGraphique} theme={theme} timeframe={timeframe} />
         </div>
 
         {/* ─── PANEL DROIT : Position active + Historique ─── */}
-        <div className={`w-[280px] flex flex-col border-l flex-shrink-0 ${C.bgPanel}`}>
+        {/* Se place en-dessous du graphique sur mobile, et à sa droite sur écran moyen (md) */}
+        <div className={`w-full md:w-[280px] flex flex-col border-t md:border-t-0 md:border-l flex-shrink-0 ${C.bgPanel}`}>
 
           {/* Stats rapides de session */}
           <div className={`px-4 py-3 border-b flex items-center gap-4 text-[11px] ${C.border}`}>
@@ -505,7 +523,7 @@ export function BacktestWorkspace() {
           )}
 
           {/* Historique des trades simulés */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-grow md:flex-1 md:overflow-y-auto">
             <div className={`px-4 py-2 border-b text-[10px] uppercase tracking-wider font-semibold ${C.border} ${C.textMuted}`}>
               Historique de session
             </div>

@@ -10,10 +10,16 @@ export interface PositionSimulee {
   stopLoss: number;
   takeProfit: number;
   dateEntree: string | number;
+  indexEntree: number;           // Index de la bougie d'entrée (pour calculer la durée réelle)
+  dureeEstimeeHeures?: number;   // Estimation du trader en heures
+  dureeEstimeeBougies?: number;  // Conversion de l'estimation en nombre de bougies avant TP
+  dureeEstimeeLargeur?: number;  // Largeur visuelle du bloc de trade en bougies
   prixSortie?: number;
   dateSortie?: string | number;
+  indexSortie?: number;          // Index de la bougie de sortie
+  dureeReelleBougies?: number;   // Calculé automatiquement à la clôture
   resultat?: 'win' | 'loss' | 'breakeven';
-  pnl?: number; // Gain/Perte en pourcentage ou valeur relative
+  pnl?: number;
 }
 
 interface BacktestState {
@@ -36,7 +42,16 @@ interface BacktestState {
   revenirDebut: () => void;
   setEstEnLecture: (val: boolean) => void;
   setVitesseLecture: (ms: number) => void;
-  ouvrirPosition: (direction: 'long' | 'short', prixEntree: number, stopLoss: number, takeProfit: number) => void;
+  ouvrirPosition: (
+    direction: 'long' | 'short',
+    prixEntree: number,
+    stopLoss: number,
+    takeProfit: number,
+    dureeEstimeeHeures?: number,
+    dureeEstimeeBougies?: number,
+    dureeEstimeeLargeur?: number
+  ) => void;
+  modifierPositionActive: (updates: Partial<PositionSimulee>) => void;
   fermerPositionManuellement: () => void;
   supprimerTradeHistorique: (index: number) => void;
   reinitialiserSession: () => void;
@@ -125,12 +140,14 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
         }
       }
 
-      // Si le trade s'est fermé sur cette bougie, on l'ajoute à l'historique de la session
+      // Si le trade s'est fermé sur cette bougie, on calcule la durée réelle et on archive
       if (positionMiseAJour.prixSortie) {
-        // Calcul du résultat final (breakeven si pnl est quasi nul)
         if (Math.abs(positionMiseAJour.pnl || 0) < 0.05) {
           positionMiseAJour.resultat = 'breakeven';
         }
+        // Calcul automatique de la durée réelle en bougies
+        positionMiseAJour.indexSortie = prochainIndex;
+        positionMiseAJour.dureeReelleBougies = prochainIndex - positionMiseAJour.indexEntree;
         historiqueMisAJour.push(positionMiseAJour);
         positionMiseAJour = null;
       }
@@ -160,8 +177,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   setEstEnLecture: (val) => set({ estEnLecture: val }),
   setVitesseLecture: (ms) => set({ vitesseLecture: ms }),
 
-  // Ouvre une nouvelle position de simulation
-  ouvrirPosition: (direction, prixEntree, stopLoss, takeProfit) => {
+  ouvrirPosition: (direction, prixEntree, stopLoss, takeProfit, dureeEstimeeHeures, dureeEstimeeBougies, dureeEstimeeLargeur) => {
     const { donneesCompletes, indexCourant, positionActive } = get();
     if (positionActive) {
       console.warn('⚠️ [Backtest Store] Une position est déjà ouverte.');
@@ -175,10 +191,25 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       stopLoss,
       takeProfit,
       dateEntree: bougieActuelle.time,
+      indexEntree: indexCourant,
+      dureeEstimeeHeures,
+      dureeEstimeeBougies,
+      dureeEstimeeLargeur: dureeEstimeeLargeur || 30, // Largeur par défaut de 30 bougies
     };
 
     console.log(`📈 [Backtest Store] Ouverture d'une position ${direction} à ${prixEntree}`);
     set({ positionActive: nouvellePosition });
+  },
+
+  modifierPositionActive: (updates) => {
+    const { positionActive } = get();
+    if (!positionActive) return;
+    set({
+      positionActive: {
+        ...positionActive,
+        ...updates
+      }
+    });
   },
 
   // Fermeture manuelle de la position au prix actuel du marché
@@ -197,6 +228,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       ...positionActive,
       prixSortie,
       dateSortie: bougieActuelle.time,
+      indexSortie: indexCourant,
+      dureeReelleBougies: indexCourant - positionActive.indexEntree,
       pnl: pnlCalculé,
       resultat: pnlCalculé > 0.05 
         ? 'win' 

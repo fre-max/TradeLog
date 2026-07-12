@@ -63,3 +63,12 @@ html.light .bg-bg {
     transform: translateY(0);
   }
 }
+
+/* Cache les barres de défilement tout en gardant le défilement actif */
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+}
+.scrollbar-none {
+  -ms-overflow-style: none !important;  /* IE et Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}

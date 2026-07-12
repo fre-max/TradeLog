@@ -10,8 +10,6 @@ import {
 import {
   DrawingManager,
   getToolRegistry,
-  LongPosition,
-  ShortPosition,
   TrendLine,
   Rectangle,
   FibRetracement,
@@ -19,17 +17,12 @@ import {
   VerticalLine,
   Ray,
   ExtendedLine,
-  LongPositionPaneView,
-  ShortPositionPaneView,
 } from 'lightweight-charts-drawing';
-import { useBacktestStore } from '@/store/backtestStore';
+import { useBacktestStore, type PositionSimulee } from '@/store/backtestStore';
 
-// ─── 🛠️ SEUILS DE DÉTECTION ET TACTILE (Hit Threshold) ──────────────────────
-// Augmentation globale des seuils de détection à 30px (au lieu de 5px par défaut)
-// pour simplifier la sélection des dessins avec de gros doigts sur tablette.
+// ─── 🛠️ Seuils de détection tactile élargis ──────────────────────────────────
+// 30px de tolérance au lieu de 5px par défaut pour faciliter la sélection au doigt.
 try {
-  (LongPosition as any).HIT_THRESHOLD = 30;
-  (ShortPosition as any).HIT_THRESHOLD = 30;
   (TrendLine as any).HIT_THRESHOLD = 30;
   (Rectangle as any).HIT_THRESHOLD = 30;
   (FibRetracement as any).HIT_THRESHOLD = 30;
@@ -37,179 +30,28 @@ try {
   (VerticalLine as any).HIT_THRESHOLD = 30;
   (Ray as any).HIT_THRESHOLD = 30;
   (ExtendedLine as any).HIT_THRESHOLD = 30;
-  console.log('✅ [BacktestChart] HIT_THRESHOLD augmenté à 30px pour le tactile.');
 } catch (e) {
-  console.warn('[BacktestChart] Impossible d\'augmenter HIT_THRESHOLD :', e);
+  console.warn('[BacktestChart] HIT_THRESHOLD non modifiable :', e);
 }
 
-// Helper pour tracer une ligne sur le canvas (comme le helper interne `b` de la lib)
-function dessinerLigne(ctx: CanvasRenderingContext2D, p1: { x: number; y: number }, p2: { x: number; y: number }, pixelRatio: number) {
-  ctx.beginPath();
-  ctx.moveTo(p1.x * pixelRatio, p1.y * pixelRatio);
-  ctx.lineTo(p2.x * pixelRatio, p2.y * pixelRatio);
-  ctx.stroke();
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+/** Représente une position Long ou Short dessinée sur le canvas overlay */
+interface PositionCanvas {
+  id: string;
+  direction: 'long' | 'short';
+  prixEntree: number;
+  prixSL: number;
+  prixTP: number;
+  indexEntree: number;           // Index de la bougie d'entrée (pour tracer la ligne verticale)
+  dureeEstimeeHeures?: number;   // Durée estimée en heures
+  dureeEstimeeBougies?: number;  // Ligne verticale jaune à indexEntree + dureeEstimeeBougies
+  dureeEstimeeLargeur?: number;  // Largeur visuelle du bloc de trade en bougies
+  selected: boolean;
 }
 
-// ─── 🐒 MONKEYPATCHING DES RENDERERS LONG & SHORT POSITION ──────────────────
-// Remplace le code de rendu par défaut des positions pour lire une 4ème ancre (index 3)
-// si elle est définie, afin de pouvoir élargir horizontalement la position par glissement (Drag).
-const patcherRenduPosition = (PaneViewClass: any) => {
-  try {
-    const instanceFactice = new PaneViewClass({
-      isValid: () => false,
-      options: { visible: false },
-      anchors: [],
-      positionOptions: {},
-      getPositionInfo: () => ({
-        entry: 0,
-        stopLoss: 0,
-        takeProfit: 0,
-        risk: 0,
-        reward: 0,
-        riskRewardRatio: 0,
-        riskPercent: 0,
-        rewardPercent: 0
-      }),
-    });
-    const renderer = instanceFactice.renderer();
-    if (!renderer) return;
-
-    const proto = Object.getPrototypeOf(renderer);
-    if (proto && typeof proto.drawImpl === 'function') {
-      proto.drawImpl = function (i: any) {
-        const { context: t, horizontalPixelRatio: s } = i;
-        const e = s;
-        const n = this._drawing.getViewport();
-        if (!n || !this._drawing.options.visible || !this._drawing.isValid()) return;
-        const o = this._drawing.anchors;
-        const r = this._drawing.anchorToPixel(o[0], n);
-        const a = this._drawing.anchorToPixel(o[1], n);
-        const c = this._drawing.anchorToPixel(o[2], n);
-        if (!r || !a || !c) return;
-
-        const l = this._drawing.positionOptions;
-        const h = this._drawing.getPositionInfo();
-
-        // ⚠️ Notre modification majeure :
-        // Si une 4ème ancre est présente, sa coordonnée X sert de largeur (en pixels)
-        let d = 200; // Largeur par défaut originale
-        if (o.length >= 4) {
-          const pixelEnd = this._drawing.anchorToPixel(o[3], n);
-          if (pixelEnd) {
-            d = Math.max(30, pixelEnd.x - r.x);
-          }
-        }
-
-        const estLong = this._drawing.type === "long-position";
-
-        t.save();
-
-        // 1️⃣ Zone de Stop Loss (Rouge transparent)
-        t.fillStyle = "rgba(239, 83, 80, 0.25)";
-        const f = Math.min(r.y, a.y);
-        const g = Math.abs(a.y - r.y);
-        t.fillRect(r.x * e, f * e, d * e, g * e);
-        t.strokeStyle = "#ef5350";
-        t.lineWidth = 1 * e;
-        t.strokeRect(r.x * e, f * e, d * e, g * e);
-
-        // 2️⃣ Zone de Take Profit (Vert transparent)
-        t.fillStyle = "rgba(38, 166, 154, 0.25)";
-        const _ = Math.min(r.y, c.y);
-        const y = Math.abs(c.y - r.y);
-        t.fillRect(r.x * e, _ * e, d * e, y * e);
-        t.strokeStyle = "#26a69a";
-        t.lineWidth = 1 * e;
-        t.strokeRect(r.x * e, _ * e, d * e, y * e);
-
-        // 3️⃣ Ligne de prix d'entrée (Bleu)
-        t.strokeStyle = "#2196F3";
-        t.lineWidth = 2 * e;
-        dessinerLigne(t, { x: r.x, y: r.y }, { x: r.x + d, y: r.y }, e);
-
-        // 4️⃣ Ligne de Stop Loss (Rouge pointillé)
-        t.strokeStyle = "#ef5350";
-        t.lineWidth = 1.5 * e;
-        t.setLineDash([5 * e, 3 * e]);
-        dessinerLigne(t, { x: r.x, y: a.y }, { x: r.x + d, y: a.y }, e);
-
-        // 5️⃣ Ligne de Take Profit (Vert continu)
-        t.strokeStyle = "#26a69a";
-        t.lineWidth = 1.5 * e;
-        t.setLineDash([]);
-        dessinerLigne(t, { x: r.x, y: c.y }, { x: r.x + d, y: c.y }, e);
-
-        // 6️⃣ Libellés textuels sur la droite
-        const xText = 11;
-        t.font = `${xText * e}px sans-serif`;
-        t.textAlign = "left";
-        t.textBaseline = "middle";
-        const w = r.x + d + 5;
-
-        t.fillStyle = "#2196F3";
-        let textEntry = "Entrée";
-        if (l.showPrices) textEntry += `: $${h.entry.toFixed(2)}`;
-        t.fillText(textEntry, w * e, r.y * e);
-
-        t.fillStyle = "#ef5350";
-        let textSL = "SL";
-        if (l.showPrices) textSL += `: $${h.stopLoss.toFixed(2)}`;
-        if (l.showPercentage) textSL += ` (-${h.riskPercent.toFixed(2)}%)`;
-        t.fillText(textSL, w * e, a.y * e);
-
-        t.fillStyle = "#26a69a";
-        let textTP = "TP";
-        if (l.showPrices) textTP += `: $${h.takeProfit.toFixed(2)}`;
-        if (l.showPercentage) textTP += ` (+${h.rewardPercent.toFixed(2)}%)`;
-        t.fillText(textTP, w * e, c.y * e);
-
-        if (l.showRiskReward) {
-          t.fillStyle = "#ffffff";
-          const rrText = `R:R = 1:${h.riskRewardRatio.toFixed(2)}`;
-          const middleY = (r.y + c.y) / 2;
-          t.fillText(rrText, (r.x + 10) * e, middleY * e);
-        }
-
-        // Tag LONG / SHORT
-        t.fillStyle = estLong ? "#26a69a" : "#ef5350";
-        t.font = `bold ${13 * e}px sans-serif`;
-        t.fillText(estLong ? "LONG" : "SHORT", (r.x + 10) * e, (r.y - 15) * e);
-
-        // 7️⃣ Points d'ancrage (handles de glissement)
-        const state = this._drawing.state;
-        if (state === "selected" || state === "editing") {
-          const points = this._drawing.getControlPoints(n);
-          t.fillStyle = "#ffffff";
-          t.strokeStyle = "#2196F3";
-          t.lineWidth = 2 * e;
-
-          for (const pt of points) {
-            let py = pt.y;
-            // Pour l'ancre d'élargissement (index 3), on la verrouille visuellement sur la ligne d'entrée bleue
-            if (pt.index === 3) {
-              py = r.y;
-            }
-            t.beginPath();
-            t.arc(pt.x * e, py * e, 6 * e, 0, Math.PI * 2); // Cercles légèrement plus grands (6)
-            t.fill();
-            t.stroke();
-          }
-        }
-
-        t.restore();
-      };
-    }
-  } catch (err) {
-    console.error('Erreur lors du monkeypatching de la classe de rendu :', err);
-  }
-};
-
-// Application automatique du patch
-patcherRenduPosition(LongPositionPaneView);
-patcherRenduPosition(ShortPositionPaneView);
-
-
-// ─── CONFIGURATION OUTILS DESSIN ─────────────────────────────────────────────
+// ─── Configuration des outils de dessin de la bibliothèque ────────────────────
+// Les outils pos-long et pos-short sont gérés par notre propre système canvas.
 const CONFIG_OUTILS: Record<string, {
   ancres: 1 | 2 | 3;
   instructions: string[];
@@ -217,17 +59,17 @@ const CONFIG_OUTILS: Record<string, {
 }> = {
   'horizontal-line': {
     ancres: 1,
-    instructions: ['Cliquez sur le graphique pour poser la ligne horizontale'],
+    instructions: ['Cliquez pour poser la ligne horizontale'],
     couleurPreview: '#2962ff',
   },
   'vertical-line': {
     ancres: 1,
-    instructions: ['Cliquez sur le graphique pour poser la ligne verticale'],
+    instructions: ['Cliquez pour poser la ligne verticale'],
     couleurPreview: '#2962ff',
   },
   'trend-line': {
     ancres: 2,
-    instructions: ['Point A : cliquez pour poser le début de la ligne', 'Point B : cliquez pour terminer la ligne'],
+    instructions: ['Point A : cliquez pour commencer', 'Point B : cliquez pour terminer'],
     couleurPreview: '#2962ff',
   },
   'ray': {
@@ -237,34 +79,35 @@ const CONFIG_OUTILS: Record<string, {
   },
   'extended-line': {
     ancres: 2,
-    instructions: ['Point A : cliquez pour commencer', 'Point B : cliquez pour terminer (la ligne s\'étend à l\'infini)'],
+    instructions: ['Point A : cliquez pour commencer', 'Point B : (la ligne s\'étend à l\'infini)'],
     couleurPreview: '#2962ff',
   },
   'rectangle': {
     ancres: 2,
-    instructions: ['Premier coin : cliquez pour commencer la zone', 'Coin opposé : cliquez pour fermer le rectangle'],
+    instructions: ['Premier coin : cliquez ici', 'Coin opposé : cliquez pour fermer'],
     couleurPreview: '#2962ff',
   },
   'fib-retracement': {
     ancres: 2,
-    instructions: ['Sommet ou creux : cliquez ici', 'Bas ou haut opposé : cliquez pour tracer les niveaux Fibonacci'],
+    instructions: ['Sommet/creux : cliquez ici', 'Bas/haut opposé : tracez les niveaux Fibonacci'],
     couleurPreview: '#ff9800',
   },
-  'long-position': {
+  // Nos outils custom de position
+  'pos-long': {
     ancres: 3,
     instructions: [
-      '① Entrée : cliquez pour poser le prix d\'entrée du Long',
-      '② Stop Loss : cliquez pour poser le Stop Loss (en-dessous de l\'entrée)',
-      '③ Take Profit : cliquez pour poser le Take Profit (au-dessus de l\'entrée)',
+      '① Entrée : cliquez sur le prix d\'entrée Long',
+      '② Stop Loss : cliquez sur votre Stop Loss (en-dessous)',
+      '③ Take Profit : cliquez sur votre Take Profit (au-dessus)',
     ],
     couleurPreview: '#26a69a',
   },
-  'short-position': {
+  'pos-short': {
     ancres: 3,
     instructions: [
-      '① Entrée : cliquez pour poser le prix d\'entrée du Short',
-      '② Stop Loss : cliquez pour poser le Stop Loss (au-dessus de l\'entrée)',
-      '③ Take Profit : cliquez pour poser le Take Profit (en-dessous de l\'entrée)',
+      '① Entrée : cliquez sur le prix d\'entrée Short',
+      '② Stop Loss : cliquez sur votre Stop Loss (au-dessus)',
+      '③ Take Profit : cliquez sur votre Take Profit (en-dessous)',
     ],
     couleurPreview: '#ef5350',
   },
@@ -274,6 +117,7 @@ interface BacktestChartProps {
   activeTool: string | null;
   height: number;
   theme: 'dark' | 'light';
+  timeframe: string;
 }
 
 const THEMES = {
@@ -281,7 +125,7 @@ const THEMES = {
   light: { background: '#ffffff', text: '#131722', grid: '#f0f3fa' },
 };
 
-export function BacktestChart({ activeTool, height, theme }: BacktestChartProps) {
+export function BacktestChart({ activeTool, height, theme, timeframe }: BacktestChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -294,17 +138,40 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const managerRef = useRef<DrawingManager | null>(null);
 
+  // État outil de dessin bibliothèque
   const [etapeActuelle, setEtapeActuelle] = useState(0);
   const ancresEnCoursRef = useRef<Array<{ time: any; price: number; px: number; py: number }>>([]);
   const sourisPixelRef = useRef<{ x: number; y: number } | null>(null);
   const [idDessinSelectionne, setIdDessinSelectionne] = useState<string | null>(null);
 
+  // ─── État des positions canvas (notre système custom) ────────────────────────
+  const [positionsCanvas, setPositionsCanvas] = useState<PositionCanvas[]>([]);
+  const [positionSelectionneeId, setPositionSelectionneeId] = useState<string | null>(null);
+
+  // ─── État pour le Drag-and-Drop des poignées ─────────────────────────────────
+  const [dragAction, setDragAction] = useState<{
+    positionId: string;
+    ancreIndex: number;
+    initX: number;
+    initY: number;
+    initPrixEntree: number;
+    initPrixSL: number;
+    initPrixTP: number;
+    initIndexEntree: number;
+    initDureeEstimeeLargeur: number;
+    initDureeEstimeeBougies: number;
+  } | null>(null);
+
+  // Réf stable pour les callbacks
   const stateRef = useRef({
     activeTool,
     indexCourant,
     positionActive,
     donneesCompletes,
     theme,
+    positionsCanvas,
+    positionSelectionneeId,
+    dragAction,
   });
 
   useEffect(() => {
@@ -314,10 +181,14 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       positionActive,
       donneesCompletes,
       theme,
+      positionsCanvas,
+      positionSelectionneeId,
+      dragAction,
     };
     redessinerOverlay();
-  }, [activeTool, indexCourant, positionActive, donneesCompletes, theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTool, indexCourant, positionActive, donneesCompletes, theme, positionsCanvas, positionSelectionneeId, dragAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── Rendu overlay : P&L actif + positions canvas + prévisualisation ─────────
   const redessinerOverlay = useCallback(() => {
     const canvas = overlayCanvasRef.current;
     if (!canvas) return;
@@ -331,20 +202,24 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       indexCourant: currentIndex,
       positionActive: currentPos,
       donneesCompletes: currentData,
+      positionsCanvas: currentPositions,
+      positionSelectionneeId: selectedId,
     } = stateRef.current;
 
     const chart = chartRef.current;
     const series = seriesRef.current;
-
     if (!chart || !series) return;
 
-    // 1️⃣ Ombrage dynamique du P&L actif
-    if (currentPos && currentIndex < currentData.length) {
-      const bougieEntreeTime = currentPos.dateEntree;
-      const bougieActuelle = currentData[currentIndex];
+    // 1️⃣ Dessin des positions canvas (Long/Short custom)
+    for (const pos of currentPositions) {
+      dessinerPositionCanvas(ctx, chart, series, pos, selectedId === pos.id, currentData);
+    }
 
+    // 2️⃣ Ombrage dynamique P&L de la position active du store
+    if (currentPos && currentIndex < currentData.length) {
+      const bougieActuelle = currentData[currentIndex];
       if (bougieActuelle) {
-        const xEntry = chart.timeScale().timeToCoordinate(bougieEntreeTime as Time);
+        const xEntry = chart.timeScale().timeToCoordinate(currentPos.dateEntree as Time);
         const xCurrent = chart.timeScale().timeToCoordinate(bougieActuelle.time as Time);
         const yEntry = series.priceToCoordinate(currentPos.prixEntree);
         const yCurrent = series.priceToCoordinate(bougieActuelle.close);
@@ -353,16 +228,12 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
           const x = Math.min(xEntry, xCurrent);
           const width = Math.abs(xCurrent - xEntry);
           const y = Math.min(yEntry, yCurrent);
-          const heightBox = Math.abs(yCurrent - yEntry);
-
-          const estProfit = currentPos.direction === 'long'
-            ? yCurrent < yEntry
-            : yCurrent > yEntry;
+          const hBox = Math.abs(yCurrent - yEntry);
+          const estProfit = currentPos.direction === 'long' ? yCurrent < yEntry : yCurrent > yEntry;
 
           ctx.save();
-          ctx.fillStyle = estProfit ? 'rgba(38, 166, 154, 0.25)' : 'rgba(239, 83, 80, 0.25)';
-          ctx.fillRect(x, y, width, heightBox);
-
+          ctx.fillStyle = estProfit ? 'rgba(38, 166, 154, 0.18)' : 'rgba(239, 83, 80, 0.18)';
+          ctx.fillRect(x, y, width, hBox);
           ctx.strokeStyle = estProfit ? '#26a69a' : '#ef5350';
           ctx.lineWidth = 1.5;
           ctx.beginPath();
@@ -387,7 +258,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       }
     }
 
-    // 2️⃣ Dessin preview outil de tracé
+    // 3️⃣ Prévisualisation outil en cours de tracé
     const config = currentTool ? CONFIG_OUTILS[currentTool] : null;
     const ancres = ancresEnCoursRef.current;
     const souris = sourisPixelRef.current;
@@ -418,7 +289,295 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     }
   }, []);
 
-  // ─── Initialisation unique ──────────────────────────────────────────────────
+  /**
+   * Dessine une position custom (Long/Short) sur le canvas overlay.
+   * - Zone de perte rouge (Entrée → SL)
+   * - Zone de gain verte (Entrée → TP)
+   * - Ligne horizontale d'entrée bleue
+   * - Ligne horizontale SL rouge pointillée
+   * - Ligne horizontale TP verte pointillée
+   * - Ligne verticale jaune (durée estimée)
+   * - Labels avec les prix
+   */
+  const dessinerPositionCanvas = (
+    ctx: CanvasRenderingContext2D,
+    chart: IChartApi,
+    series: ISeriesApi<any>,
+    pos: PositionCanvas,
+    estSelectionnee: boolean,
+    data: typeof donneesCompletes
+  ) => {
+    const bougieEntree = data[pos.indexEntree];
+    if (!bougieEntree) return;
+
+    const xStart = chart.timeScale().timeToCoordinate(bougieEntree.time as Time);
+    const yEntry = series.priceToCoordinate(pos.prixEntree);
+    const ySL = series.priceToCoordinate(pos.prixSL);
+    const yTP = series.priceToCoordinate(pos.prixTP);
+
+    if (xStart === null || yEntry === null || ySL === null || yTP === null) return;
+
+    // Déterminer la largeur en pixels d'une bougie à l'écran
+    let largeurBougie = 6;
+    const currentIndex = stateRef.current.indexCourant;
+    if (currentIndex > 0) {
+      const xCur = chart.timeScale().timeToCoordinate(data[currentIndex].time as Time);
+      const xPrev = chart.timeScale().timeToCoordinate(data[currentIndex - 1].time as Time);
+      if (xCur !== null && xPrev !== null) {
+        largeurBougie = Math.abs(xCur - xPrev);
+      }
+    }
+
+    // Calculer la coordonnée de fin de la boîte de trade (violette)
+    const xEnd = xStart + (pos.dureeEstimeeLargeur || 30) * largeurBougie;
+
+    // Calculer la coordonnée de la ligne de durée/délai estimée (jaune)
+    const xDuration = xStart + (pos.dureeEstimeeBougies || 12) * largeurBougie;
+
+    const largeur = Math.max(0, xEnd - xStart);
+
+    ctx.save();
+
+    // Zone SL (rouge)
+    ctx.fillStyle = 'rgba(239, 83, 80, 0.12)';
+    const yZoneSL = Math.min(yEntry, ySL);
+    const hZoneSL = Math.abs(ySL - yEntry);
+    ctx.fillRect(xStart, yZoneSL, largeur, hZoneSL);
+
+    // Zone TP (verte)
+    ctx.fillStyle = 'rgba(38, 166, 154, 0.12)';
+    const yZoneTP = Math.min(yEntry, yTP);
+    const hZoneTP = Math.abs(yTP - yEntry);
+    ctx.fillRect(xStart, yZoneTP, largeur, hZoneTP);
+
+    // Ligne d'entrée (bleue, pleine)
+    ctx.strokeStyle = '#2196F3';
+    ctx.lineWidth = estSelectionnee ? 2.5 : 1.8;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(xStart, yEntry);
+    ctx.lineTo(xEnd, yEntry);
+    ctx.stroke();
+
+    // Ligne SL (rouge, pointillée)
+    ctx.strokeStyle = '#ef5350';
+    ctx.lineWidth = estSelectionnee ? 2 : 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(xStart, ySL);
+    ctx.lineTo(xEnd, ySL);
+    ctx.stroke();
+
+    // Ligne TP (verte, pointillée)
+    ctx.strokeStyle = '#26a69a';
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(xStart, yTP);
+    ctx.lineTo(xEnd, yTP);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+
+    // Ligne verticale de durée estimée (jaune pointillée)
+    if (pos.dureeEstimeeBougies !== undefined) {
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(xDuration, yZoneTP);
+      ctx.lineTo(xDuration, Math.max(yZoneSL + hZoneSL, ySL));
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label durée estimée jaune
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 9px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      const labelDuree = pos.dureeEstimeeHeures !== undefined
+        ? `⏱ ${pos.dureeEstimeeHeures}h (${pos.dureeEstimeeBougies}b)`
+        : `⏱ ${pos.dureeEstimeeBougies}b`;
+      ctx.fillText(labelDuree, xDuration, yZoneTP - 8);
+    }
+
+    // Labels de prix
+    const xLabel = xEnd + 6;
+    ctx.font = '10px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = '#2196F3';
+    ctx.fillText(`Entrée: ${pos.prixEntree.toFixed(4)}`, xLabel, yEntry);
+
+    ctx.fillStyle = '#ef5350';
+    const riskPct = Math.abs((pos.prixSL - pos.prixEntree) / pos.prixEntree * 100).toFixed(2);
+    ctx.fillText(`SL: ${pos.prixSL.toFixed(4)} (${riskPct}%)`, xLabel, ySL);
+
+    ctx.fillStyle = '#26a69a';
+    const rewardPct = Math.abs((pos.prixTP - pos.prixEntree) / pos.prixEntree * 100).toFixed(2);
+    const risk = Math.abs(pos.prixSL - pos.prixEntree);
+    const reward = Math.abs(pos.prixTP - pos.prixEntree);
+    const rr = risk > 0 ? (reward / risk).toFixed(1) : '—';
+    ctx.fillText(`TP: ${pos.prixTP.toFixed(4)} (+${rewardPct}%) | R:R 1:${rr}`, xLabel, yTP);
+
+    // Tag LONG/SHORT
+    ctx.fillStyle = pos.direction === 'long' ? '#26a69a' : '#ef5350';
+    ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+    ctx.fillText(pos.direction === 'long' ? '▲ LONG' : '▼ SHORT', xStart + 6, yEntry - 14);
+
+    // Poignées de sélection (les 6 ancres interactives)
+    if (estSelectionnee) {
+      // Déterminer la largeur en pixels d'une bougie à l'écran
+      let largeurBougie = 6;
+      const currentIndex = stateRef.current.indexCourant;
+      if (currentIndex > 0) {
+        const xCur = chart.timeScale().timeToCoordinate(data[currentIndex].time as Time);
+        const xPrev = chart.timeScale().timeToCoordinate(data[currentIndex - 1].time as Time);
+        if (xCur !== null && xPrev !== null) {
+          largeurBougie = Math.abs(xCur - xPrev);
+        }
+      }
+
+      const widthPx = (pos.dureeEstimeeLargeur || 30) * largeurBougie;
+      const durationPx = (pos.dureeEstimeeBougies || 12) * largeurBougie;
+
+      ctx.save();
+      ctx.lineWidth = 1.5;
+
+      // 0, 1, 2 : Entrée, SL, TP (Blanc avec bordure bleue)
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#2196F3';
+      [[xStart, yEntry], [xStart, ySL], [xStart, yTP]].forEach(([x, y]) => {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+
+      // 3 : Largeur (Violet / Magenta)
+      ctx.fillStyle = '#9C27B0';
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(xStart + widthPx, yEntry, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // 4 : Ligne de durée / Délai estimé (Jaune / Or)
+      ctx.fillStyle = '#FFEB3B';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(xStart + durationPx, yEntry, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // 5 : Poignée de déplacement (Carré Orange de translation au milieu de l'entrée)
+      ctx.fillStyle = '#FF9800';
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.rect(xStart + widthPx / 2 - 4.5, yEntry - 4.5, 9, 9);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  };
+
+  // Helper pour récupérer le nombre de minutes dans une bougie selon l'UT
+  const getMinutesParBougie = (tf: string): number => {
+    switch (tf) {
+      case '1m':  return 1;
+      case '5m':  return 5;
+      case '15m': return 15;
+      case '30m': return 30;
+      case '1h':  return 60;
+      case '4h':  return 240;
+      case '1d':  return 1440;
+    }
+    return 60;
+  };
+
+  // Détecter si on clique sur l'une des 6 poignées (handles) de la position sélectionnée
+  const detecterClicPoignee = useCallback((
+    px: number,
+    py: number,
+    pos: PositionCanvas,
+    chart: IChartApi,
+    series: ISeriesApi<any>,
+    data: typeof donneesCompletes
+  ): number | null => {
+    const bougieEntree = data[pos.indexEntree];
+    if (!bougieEntree) return null;
+
+    const xStart = chart.timeScale().timeToCoordinate(bougieEntree.time as Time);
+    const yEntry = series.priceToCoordinate(pos.prixEntree);
+    const ySL = series.priceToCoordinate(pos.prixSL);
+    const yTP = series.priceToCoordinate(pos.prixTP);
+    if (xStart === null || yEntry === null || ySL === null || yTP === null) return null;
+
+    // Déterminer la largeur en pixels d'une bougie à l'écran
+    let largeurBougie = 6;
+    const currentIndex = stateRef.current.indexCourant;
+    if (currentIndex > 0) {
+      const xCur = chart.timeScale().timeToCoordinate(data[currentIndex].time as Time);
+      const xPrev = chart.timeScale().timeToCoordinate(data[currentIndex - 1].time as Time);
+      if (xCur !== null && xPrev !== null) {
+        largeurBougie = Math.abs(xCur - xPrev);
+      }
+    }
+
+    const widthPx = (pos.dureeEstimeeLargeur || 30) * largeurBougie;
+    const durationPx = (pos.dureeEstimeeBougies || 12) * largeurBougie;
+
+    const poignees = [
+      { x: xStart, y: yEntry },              // 0 : Entrée
+      { x: xStart, y: ySL },                 // 1 : SL
+      { x: xStart, y: yTP },                 // 2 : TP
+      { x: xStart + widthPx, y: yEntry },    // 3 : Largeur (Violet)
+      { x: xStart + durationPx, y: yEntry }, // 4 : Délai (Jaune)
+      { x: xStart + widthPx / 2, y: yEntry } // 5 : Déplacement (Orange)
+    ];
+
+    const seuilClic = 12; // Rayon de 12px pour une détection tactile et souris très confortable
+    for (let i = 0; i < poignees.length; i++) {
+      const dist = Math.hypot(px - poignees[i].x, py - poignees[i].y);
+      if (dist <= seuilClic) {
+        return i;
+      }
+    }
+    return null;
+  }, []);
+
+  // ─── Sélection de position canvas par clic ────────────────────────────────────
+  const detecterClicPositionCanvas = useCallback((px: number, py: number): string | null => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const data = stateRef.current.donneesCompletes;
+    if (!chart || !series) return null;
+
+    for (const pos of stateRef.current.positionsCanvas) {
+      const bougieEntree = data[pos.indexEntree];
+      if (!bougieEntree) continue;
+      const yEntry = series.priceToCoordinate(pos.prixEntree);
+      const ySL = series.priceToCoordinate(pos.prixSL);
+      const yTP = series.priceToCoordinate(pos.prixTP);
+      if (yEntry === null || ySL === null || yTP === null) continue;
+
+      const yMin = Math.min(ySL, yTP) - 5;
+      const yMax = Math.max(ySL, yTP) + 5;
+
+      // Vérifier si on clique proche d'une des lignes horizontales
+      if (py >= yMin && py <= yMax) {
+        const xStart = chart.timeScale().timeToCoordinate(bougieEntree.time as Time);
+        if (xStart !== null && px >= xStart - 5) {
+          return pos.id;
+        }
+      }
+    }
+    return null;
+  }, []);
+
+  // ─── Initialisation du graphique (une seule fois) ─────────────────────────────
   useEffect(() => {
     if (!chartContainerRef.current) return;
     console.log('🚀 [BacktestChart] Initialisation du graphique...');
@@ -461,29 +620,19 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     manager.attach(chart, series as ISeriesApi<any>, chartContainerRef.current);
     managerRef.current = manager;
 
-    // Abonnements DrawingManager
     const desabonnerSelection = manager.on('drawing:selected', (event: any) => {
       setIdDessinSelectionne(event.drawingId ?? null);
+      setPositionSelectionneeId(null); // Désélectionner les positions custom
     });
-    const desabonnerDeselection = manager.on('drawing:deselected', () => {
-      setIdDessinSelectionne(null);
-    });
-    const desabonnerSuppression = manager.on('drawing:removed', () => {
-      setIdDessinSelectionne(null);
-    });
+    const desabonnerDeselection = manager.on('drawing:deselected', () => setIdDessinSelectionne(null));
+    const desabonnerSuppression = manager.on('drawing:removed', () => setIdDessinSelectionne(null));
 
-    const gererScale = () => {
-      redessinerOverlay();
-    };
+    const gererScale = () => redessinerOverlay();
     chart.timeScale().subscribeVisibleLogicalRangeChange(gererScale);
 
-    // ─── 📱 ROUTAGE TACTILE / TABLETTE ─────────────────────────────────────
-    // Transfert des événements Pointer tactiles directement vers le DrawingManager
-    // pour permettre de déplacer les dessins et les ancres du bout du doigt.
+    // Routage tactile (glissement des dessins bibliothèque avec le doigt)
     const conteneur = chartContainerRef.current;
-    
     const gererPointerDownTactile = (e: PointerEvent) => {
-      // Uniquement si aucun outil de dessin n'est sélectionné et que c'est du tactile
       if (stateRef.current.activeTool === null && e.pointerType === 'touch') {
         (manager as any).handleMouseDown(e);
       }
@@ -498,10 +647,139 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
         (manager as any).handleMouseUp(e);
       }
     };
-
     conteneur.addEventListener('pointerdown', gererPointerDownTactile, true);
     conteneur.addEventListener('pointermove', gererPointerMoveTactile, true);
     conteneur.addEventListener('pointerup', gererPointerUpTactile, true);
+
+    // Gestionnaire de clic / drag pour nos poignées de position custom (curseur)
+    const gererPointerDownCurseur = (e: PointerEvent) => {
+      if (stateRef.current.activeTool !== null) return;
+
+      const rect = conteneur.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+
+      const currentPositions = stateRef.current.positionsCanvas;
+      const selectedId = stateRef.current.positionSelectionneeId;
+
+      if (selectedId) {
+        const posSelectionnee = currentPositions.find((p) => p.id === selectedId);
+        if (posSelectionnee) {
+          const indexPoignee = detecterClicPoignee(px, py, posSelectionnee, chart, series, stateRef.current.donneesCompletes);
+          if (indexPoignee !== null) {
+            // Démarrer le drag d'ancre !
+            setDragAction({
+              positionId: posSelectionnee.id,
+              ancreIndex: indexPoignee,
+              initX: e.clientX,
+              initY: e.clientY,
+              initPrixEntree: posSelectionnee.prixEntree,
+              initPrixSL: posSelectionnee.prixSL,
+              initPrixTP: posSelectionnee.prixTP,
+              initIndexEntree: posSelectionnee.indexEntree,
+              initDureeEstimeeLargeur: posSelectionnee.dureeEstimeeLargeur || 30,
+              initDureeEstimeeBougies: posSelectionnee.dureeEstimeeBougies || 12,
+            });
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+      }
+
+      // Sinon, essayer de sélectionner une position en cliquant sur son corps/lignes
+      const idClique = detecterClicPositionCanvas(px, py);
+      setPositionSelectionneeId(idClique);
+      if (idClique) {
+        setIdDessinSelectionne(null);
+      }
+    };
+
+    const gererPointerMoveCurseur = (e: PointerEvent) => {
+      const activeDrag = stateRef.current.dragAction;
+      if (!activeDrag) return;
+
+      const rect = conteneur.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+
+      const targetPrice = series.coordinateToPrice(py);
+      const logical = chart.timeScale().coordinateToLogical(px);
+      if (targetPrice === null || logical === null) return;
+
+      const targetIndex = Math.round(logical);
+      const data = stateRef.current.donneesCompletes;
+      const currentPositions = stateRef.current.positionsCanvas;
+      const pos = currentPositions.find(p => p.id === activeDrag.positionId);
+      if (!pos) return;
+
+      let updates: Partial<PositionCanvas> = {};
+
+      switch (activeDrag.ancreIndex) {
+        case 0: // Entrée
+          updates.prixEntree = targetPrice;
+          break;
+        case 1: // SL
+          updates.prixSL = targetPrice;
+          break;
+        case 2: // TP
+          updates.prixTP = targetPrice;
+          break;
+        case 3: // Largeur
+          updates.dureeEstimeeLargeur = Math.max(1, targetIndex - pos.indexEntree);
+          break;
+        case 4: // Délai
+          const deltaIndexDelai = targetIndex - pos.indexEntree;
+          const bougiesDelai = Math.max(1, deltaIndexDelai);
+          updates.dureeEstimeeBougies = bougiesDelai;
+          updates.dureeEstimeeHeures = Number((bougiesDelai * (getMinutesParBougie(timeframe) / 60)).toFixed(2));
+          break;
+        case 5: // Déplacer tout (Translation)
+          const initPrice = series.coordinateToPrice(activeDrag.initY - rect.top);
+          if (initPrice !== null) {
+            const dyPrice = targetPrice - initPrice;
+            updates.prixEntree = activeDrag.initPrixEntree + dyPrice;
+            updates.prixSL = activeDrag.initPrixSL + dyPrice;
+            updates.prixTP = activeDrag.initPrixTP + dyPrice;
+          }
+          const initLogical = chart.timeScale().coordinateToLogical(activeDrag.initX - rect.left);
+          if (initLogical !== null) {
+            const dxIndex = Math.round(logical - initLogical);
+            updates.indexEntree = Math.max(0, Math.min(data.length - 1, activeDrag.initIndexEntree + dxIndex));
+          }
+          break;
+      }
+
+      setPositionsCanvas((prev) =>
+        prev.map((p) => (p.id === activeDrag.positionId ? { ...p, ...updates } : p))
+      );
+
+      // Si c'est la position active, mettre à jour le store Zustand
+      if (activeDrag.positionId === 'active-position') {
+        const storeUpdates: Partial<PositionSimulee> = {};
+        if (updates.prixEntree !== undefined) storeUpdates.prixEntree = updates.prixEntree;
+        if (updates.prixSL !== undefined) storeUpdates.stopLoss = updates.prixSL;
+        if (updates.prixTP !== undefined) storeUpdates.takeProfit = updates.prixTP;
+        if (updates.indexEntree !== undefined) {
+          storeUpdates.indexEntree = updates.indexEntree;
+          const bougie = data[updates.indexEntree];
+          if (bougie) storeUpdates.dateEntree = bougie.time;
+        }
+        if (updates.dureeEstimeeHeures !== undefined) storeUpdates.dureeEstimeeHeures = updates.dureeEstimeeHeures;
+        if (updates.dureeEstimeeBougies !== undefined) storeUpdates.dureeEstimeeBougies = updates.dureeEstimeeBougies;
+        if (updates.dureeEstimeeLargeur !== undefined) storeUpdates.dureeEstimeeLargeur = updates.dureeEstimeeLargeur;
+
+        useBacktestStore.getState().modifierPositionActive(storeUpdates);
+      }
+    };
+
+    const gererPointerUpCurseur = () => {
+      setDragAction(null);
+    };
+
+    conteneur.addEventListener('pointerdown', gererPointerDownCurseur, true);
+    window.addEventListener('pointermove', gererPointerMoveCurseur);
+    window.addEventListener('pointerup', gererPointerUpCurseur);
 
     const observateur = new ResizeObserver(() => {
       if (chartContainerRef.current && chartRef.current) {
@@ -518,11 +796,12 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       desabonnerDeselection();
       desabonnerSuppression();
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(gererScale);
-      
       conteneur.removeEventListener('pointerdown', gererPointerDownTactile, true);
       conteneur.removeEventListener('pointermove', gererPointerMoveTactile, true);
       conteneur.removeEventListener('pointerup', gererPointerUpTactile, true);
-      
+      conteneur.removeEventListener('pointerdown', gererPointerDownCurseur, true);
+      window.removeEventListener('pointermove', gererPointerMoveCurseur);
+      window.removeEventListener('pointerup', gererPointerUpCurseur);
       manager.detach();
       chart.remove();
       observateur.disconnect();
@@ -553,42 +832,39 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     redessinerOverlay();
   }, [height, redessinerOverlay]);
 
-  // Suppression clavier
-  useEffect(() => {
-    const gererTouche = (e: KeyboardEvent) => {
-      if (activeTool !== null) return;
-      if (!idDessinSelectionne) return;
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
-
-      e.preventDefault();
-      supprimerDessinSelectionne();
-    };
-    window.addEventListener('keydown', gererTouche);
-    return () => window.removeEventListener('keydown', gererTouche);
-  }, [activeTool, idDessinSelectionne]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const supprimerDessinSelectionne = () => {
-    const manager = managerRef.current;
-    if (!manager || !idDessinSelectionne) return;
-    manager.removeDrawing(idDessinSelectionne);
-    setIdDessinSelectionne(null);
-  };
-
-  // Replay data sync
+  // Replay sync
   useEffect(() => {
     if (!seriesRef.current || donneesCompletes.length === 0) return;
     const donneesVisibles = donneesCompletes
       .slice(0, indexCourant + 1)
       .map((b) => ({ ...b, time: b.time as Time }));
     seriesRef.current.setData(donneesVisibles);
-
     if (chartRef.current) {
       chartRef.current.timeScale().scrollToPosition(15, false);
     }
   }, [donneesCompletes, indexCourant]);
 
-  // Gestion tracé interactif
+  // Suppression clavier (dessins bibliothèque ET positions canvas)
+  useEffect(() => {
+    const gererTouche = (e: KeyboardEvent) => {
+      if (activeTool !== null) return;
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+
+      if (positionSelectionneeId) {
+        setPositionsCanvas((prev) => prev.filter((p) => p.id !== positionSelectionneeId));
+        setPositionSelectionneeId(null);
+      } else if (idDessinSelectionne) {
+        managerRef.current?.removeDrawing(idDessinSelectionne);
+        setIdDessinSelectionne(null);
+      }
+    };
+    window.addEventListener('keydown', gererTouche);
+    return () => window.removeEventListener('keydown', gererTouche);
+  }, [activeTool, idDessinSelectionne, positionSelectionneeId]);
+
+  // ─── Gestion outil de dessin actif ───────────────────────────────────────────
   useEffect(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
@@ -599,10 +875,6 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     setEtapeActuelle(0);
     ancresEnCoursRef.current = [];
     sourisPixelRef.current = null;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx?.clearRect(0, 0, canvas.width, canvas.height);
-    }
 
     if (!activeTool || !chart || !series || !manager || !conteneur || !canvas) {
       if (conteneur) {
@@ -622,7 +894,23 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       const rect = conteneur.getBoundingClientRect();
       const px = event.clientX - rect.left;
       const py = event.clientY - rect.top;
-      const time = chart.timeScale().coordinateToTime(px);
+      
+      // Essayer d'abord d'obtenir le temps standard (zone passée/présente)
+      let time = chart.timeScale().coordinateToTime(px);
+      
+      // Si on clique dans la zone future (où les bougies ne sont pas encore affichées),
+      // coordinateToTime renvoie null. On utilise coordinateToLogical pour retrouver l'index.
+      if (time === null) {
+        const logical = chart.timeScale().coordinateToLogical(px);
+        if (logical !== null) {
+          const targetIndex = Math.round(logical);
+          const completes = stateRef.current.donneesCompletes;
+          if (targetIndex >= 0 && targetIndex < completes.length) {
+            time = completes[targetIndex].time as Time;
+          }
+        }
+      }
+
       const price = series.coordinateToPrice(py);
       if (time === null || price === null) return null;
       return { time, price, px, py };
@@ -638,41 +926,81 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       const ancre = eventToAncre(event);
       if (!ancre) return;
 
+      const estOutil = activeTool === 'pos-long' || activeTool === 'pos-short';
+
+      // Pour les outils bibliothèque, on désélectionne une position canvas si cliquée
+      if (!estOutil) {
+        const idClique = detecterClicPositionCanvas(ancre.px, ancre.py);
+        if (idClique) {
+          setPositionSelectionneeId(idClique);
+          return;
+        }
+      }
+
       ancresEnCoursRef.current.push(ancre);
       const nouvelleEtape = ancresEnCoursRef.current.length;
       setEtapeActuelle(nouvelleEtape);
 
       if (nouvelleEtape >= config.ancres) {
-        const ancresFinales = ancresEnCoursRef.current.map((a) => ({ time: a.time, price: a.price }));
-        
-        // ⚠️ Notre modification majeure :
-        // Pour les positions Long/Short, on rajoute automatiquement une 4ème ancre (index 3)
-        // placée 15 bougies plus loin, qui servira de poignée d'élargissement horizontale (Drag handle).
-        if (activeTool === 'long-position' || activeTool === 'short-position') {
-          const indexFutur = Math.min(indexCourant + 15, donneesCompletes.length - 1);
-          const tempsFutur = donneesCompletes[indexFutur]?.time ?? ancresFinales[0].time;
-          ancresFinales.push({ time: tempsFutur, price: ancresFinales[0].price });
-        }
+        const ancresFinales = ancresEnCoursRef.current;
 
-        const idUnique = `${activeTool}-${Date.now()}`;
-        const dessin = getToolRegistry().createDrawing(activeTool, idUnique, ancresFinales, {}, {});
+        if (estOutil) {
+          // ─ Outil position custom ─
+          const direction = activeTool === 'pos-long' ? 'long' as const : 'short' as const;
+          const minPB = getMinutesParBougie(timeframe);
+          const defBougies = 12; // Valeur par défaut
+          const heuresEstim = Number(((defBougies * minPB) / 60).toFixed(2));
 
-        if (dessin) {
-          manager.addDrawing(dessin);
+          const nouvellePosition: PositionCanvas = {
+            id: 'active-position', // ID unique pour la position active
+            direction,
+            prixEntree: ancresFinales[0].price,
+            prixSL: ancresFinales[1].price,
+            prixTP: ancresFinales[2].price,
+            indexEntree: stateRef.current.indexCourant,
+            dureeEstimeeLargeur: 30, // Largeur par défaut
+            dureeEstimeeBougies: defBougies,
+            dureeEstimeeHeures: heuresEstim,
+            selected: false,
+          };
 
-          if (activeTool === 'long-position' || activeTool === 'short-position') {
-            const direction = activeTool === 'long-position' ? 'long' as const : 'short' as const;
-            const prixEntree = ancresFinales[0].price;
-            const prixSL = ancresFinales[1].price;
-            const prixTP = ancresFinales[2].price;
-            ouvrirPosition(direction, prixEntree, prixSL, prixTP);
-          }
+          // Ajouter localement et dans le store Zustand
+          setPositionsCanvas((prev) => [...prev.filter((p) => p.id !== 'active-position'), nouvellePosition]);
+          ouvrirPosition(
+            direction,
+            nouvellePosition.prixEntree,
+            nouvellePosition.prixSL,
+            nouvellePosition.prixTP,
+            heuresEstim,
+            defBougies,
+            30
+          );
+          // Sélectionner immédiatement pour pouvoir manipuler les poignées
+          setPositionSelectionneeId('active-position');
+        } else {
+          // ─ Outil bibliothèque ─
+          const ancresLibrairie = ancresFinales.map((a) => ({ time: a.time, price: a.price }));
+          const idUnique = `${activeTool}-${Date.now()}`;
+          const dessin = getToolRegistry().createDrawing(activeTool, idUnique, ancresLibrairie, {}, {});
+          if (dessin) manager.addDrawing(dessin);
         }
 
         ancresEnCoursRef.current = [];
         setEtapeActuelle(0);
         sourisPixelRef.current = null;
         redessinerOverlay();
+      }
+    };
+
+    // Gestion du clic en mode curseur (sélection positions custom)
+    const gererClicCurseur = (event: PointerEvent) => {
+      if (activeTool === null) {
+        const rect = conteneur.getBoundingClientRect();
+        const px = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        const idClique = detecterClicPositionCanvas(px, py);
+        setPositionSelectionneeId(idClique);
+        if (idClique) setIdDessinSelectionne(null);
       }
     };
 
@@ -688,13 +1016,33 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       sourisPixelRef.current = null;
       redessinerOverlay();
     };
-  }, [activeTool, indexCourant, donneesCompletes, ouvrirPosition, redessinerOverlay]);
+  }, [activeTool, detecterClicPositionCanvas, redessinerOverlay]);
+
+  // Gestion du clic en mode curseur (null) pour sélectionner les positions canvas
+  useEffect(() => {
+    if (activeTool !== null) return;
+    const conteneur = chartContainerRef.current;
+    if (!conteneur) return;
+
+    const gererClicCurseur = (event: PointerEvent) => {
+      const rect = conteneur.getBoundingClientRect();
+      const px = event.clientX - rect.left;
+      const py = event.clientY - rect.top;
+      const idClique = detecterClicPositionCanvas(px, py);
+      setPositionSelectionneeId(idClique);
+      if (idClique) setIdDessinSelectionne(null);
+    };
+
+    conteneur.addEventListener('pointerdown', gererClicCurseur);
+    return () => conteneur.removeEventListener('pointerdown', gererClicCurseur);
+  }, [activeTool, detecterClicPositionCanvas]);
 
   const config = activeTool ? CONFIG_OUTILS[activeTool] : null;
   const messageInstruction = config
     ? config.instructions[Math.min(etapeActuelle, config.instructions.length - 1)]
     : null;
   const progresseAncres = config ? `${etapeActuelle}/${config.ancres}` : null;
+  const estOutil = activeTool === 'pos-long' || activeTool === 'pos-short';
 
   return (
     <div className="relative w-full h-full flex flex-col">
@@ -705,7 +1053,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
         {messageInstruction ? (
           <>
             <span className="font-bold text-[#2962ff] font-mono shrink-0">{progresseAncres}</span>
-            <span className={`font-medium ${config?.couleurPreview === '#26a69a' ? 'text-[#26a69a]' : config?.couleurPreview === '#ef5350' ? 'text-[#ef5350]' : 'text-[#d1d4dc]'}`}>
+            <span className={`font-medium ${estOutil && activeTool === 'pos-long' ? 'text-[#26a69a]' : estOutil ? 'text-[#ef5350]' : 'text-[#d1d4dc]'}`}>
               {messageInstruction}
             </span>
           </>
@@ -714,15 +1062,15 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
             <span className="opacity-50">↖</span>
             <span>
               {activeTool === null
-                ? 'Mode Sélection — Touchez/cliquez un dessin pour le modifier ou le faire glisser'
-                : 'Outil de dessin sélectionné — cliquez/touchez le graphique pour commencer'
+                ? 'Mode Sélection — Touchez/cliquez un dessin pour le modifier · Del pour supprimer'
+                : 'Outil sélectionné — cliquez sur le graphique pour commencer'
               }
             </span>
           </>
         )}
         {activeTool && (
           <span className="ml-auto text-[10px] opacity-50">
-            Appuyez sur <kbd className={`px-1 rounded text-[9px] ${theme === 'dark' ? 'bg-[#2a2e39]' : 'bg-[#e0e3eb]'}`}>Esc</kbd> pour annuler
+            <kbd className={`px-1 rounded text-[9px] ${theme === 'dark' ? 'bg-[#2a2e39]' : 'bg-[#e0e3eb]'}`}>Esc</kbd> pour annuler
           </span>
         )}
       </div>
@@ -737,21 +1085,27 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
           style={{ zIndex: 10 }}
         />
 
-        {/* Bouton de suppression flottant */}
-        {idDessinSelectionne && activeTool === null && (
+        {/* Bouton de suppression flottant (dessin bibliothèque OU position canvas) */}
+        {(idDessinSelectionne || positionSelectionneeId) && activeTool === null && (
           <div className="absolute bottom-4 left-4 z-20 flex items-center gap-2">
             <button
-              onClick={supprimerDessinSelectionne}
+              onClick={() => {
+                if (positionSelectionneeId) {
+                  setPositionsCanvas((prev) => prev.filter((p) => p.id !== positionSelectionneeId));
+                  setPositionSelectionneeId(null);
+                } else if (idDessinSelectionne) {
+                  managerRef.current?.removeDrawing(idDessinSelectionne);
+                  setIdDessinSelectionne(null);
+                }
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ef5350] hover:bg-[#e53935] text-white text-[11px] font-bold rounded shadow-lg transition-colors"
-              title="Supprimer le dessin (Delete)"
             >
               <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
                 <path d="M6 2a1 1 0 0 0-1 1v.5H3.5a.5.5 0 0 0 0 1H4v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-8h.5a.5.5 0 0 0 0-1H11V3a1 1 0 0 0-1-1H6zm1 1h2v.5H7V3zm-2 2h6v7.5H5V5z"/>
               </svg>
               Supprimer
             </button>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded
-              ${theme === 'dark' ? 'bg-[#2a2e39] text-[#787b86]' : 'bg-[#e0e3eb] text-[#434651]'}`}>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-[#2a2e39] text-[#787b86]' : 'bg-[#e0e3eb] text-[#434651]'}`}>
               ou <kbd>Del</kbd>
             </span>
           </div>
