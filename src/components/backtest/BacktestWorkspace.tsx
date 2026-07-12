@@ -43,6 +43,8 @@ const TIMEFRAMES = [
   { label: '1h', value: '1h' },
   { label: '4h', value: '4h' },
   { label: '1d', value: '1d' },
+  { label: '1w', value: '1w' },
+  { label: '1M', value: '1M' },
 ];
 
 // Actifs disponibles (Crypto Binance — API publique gratuite)
@@ -109,7 +111,26 @@ export function BacktestWorkspace() {
   // Nombre de bougies à charger de l'API Binance (100 à 1000)
   const [limiteBougies, setLimiteBougies] = useState(500);
 
+  // Type de journal de destination choisi dans l'en-tête pour l'export des trades
+  const [journalDest, setJournalDest] = useState<'global' | 'bias' | 'poi' | 'confirmation'>('global');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Convertit le timeframe de Binance vers le format attendu par le journal
+  const mapperTimeframe = (tf: string) => {
+    switch (tf) {
+      case '1m': return 'M1';
+      case '5m': return 'M5';
+      case '15m': return 'M15';
+      case '30m': return 'M30';
+      case '1h': return 'H1';
+      case '4h': return 'H4';
+      case '1d': return 'D1';
+      case '1w': return 'W1';
+      case '1M': return 'Monthly';
+      default: return 'H1';
+    }
+  };
 
   // Référence pour appeler les méthodes de capture du graphique
   const chartRef = useRef<{ takeScreenshot: () => Promise<Blob | null> } | null>(null);
@@ -270,9 +291,10 @@ export function BacktestWorkspace() {
 
   // ─── Export d'un trade simulé vers le formulaire du Journal ─────────────────
   // Prend automatiquement une capture d'écran combinée (graphique + overlay)
-  // et l'associe directement à l'étape "Entrée" du trade créé.
+  // et l'associe directement à l'étape correspondante du journal choisi.
   const exporterVersJournal = async (trade: PositionSimulee) => {
     const tradeUid = `${trade.dateEntree}-${trade.prixEntree}`;
+    console.log('🚀 [Backtest] Début de l\'exportation du trade vers le journal :', journalDest);
     setExportantTradeId(tradeUid);
 
     let imageUrlPublic = '';
@@ -305,30 +327,57 @@ export function BacktestWorkspace() {
     const rr = risque > 0 ? (gain / risque).toFixed(2) : '1.00';
     const rrRealise = trade.resultat === 'win' ? rr : trade.resultat === 'loss' ? '-1.00' : '0';
 
-    // Prépare les images de l'étape "Prise de Position & Entrée" en phase "Avant"
-    const capturesEntree = imageUrlPublic ? [{
+    // Prépare l'image avec un ID unique pour le pré-remplissage
+    const imageElement = imageUrlPublic ? {
       id: crypto.randomUUID(),
       url: imageUrlPublic,
       source: 'upload' as const,
       phase: 'avant' as const
-    }] : [];
+    } : null;
 
-    openNewTradeWithPrefill({
-      pair: actif,
+    // Prépare l'objet de pré-remplissage selon le type de journal
+    const localPrefill: any = {
+      pair: actif !== 'Aucun actif' && actif ? actif : symbole,
       direction: trade.direction,
       date_backtested: dateTexte,
-      entry_price: trade.prixEntree.toFixed(5),
-      entry_sl: trade.stopLoss.toFixed(5),
-      entry_tp: trade.takeProfit.toFixed(5),
-      rr_planned: rr,
-      rr_realized: rrRealise,
       result: trade.resultat,
-      exit_type: trade.resultat === 'win' ? 'tp' : trade.resultat === 'loss' ? 'sl' : 'breakeven',
-      journal_type: 'global',
-      entry_images: capturesEntree,
-    });
+      journal_type: journalDest,
+    };
 
-    addToast('Formulaire du Journal pré-rempli avec les données et le graphique du backtest !', 'success');
+    // Adapte la configuration de l'export en fonction du journal sélectionné
+    if (journalDest === 'global') {
+      localPrefill.entry_price = trade.prixEntree.toFixed(5);
+      localPrefill.entry_sl = trade.stopLoss.toFixed(5);
+      localPrefill.entry_tp = trade.takeProfit.toFixed(5);
+      localPrefill.rr_planned = rr;
+      localPrefill.rr_realized = rrRealise;
+      localPrefill.exit_type = trade.resultat === 'win' ? 'tp' : trade.resultat === 'loss' ? 'sl' : 'breakeven';
+      localPrefill.entry_images = imageElement ? [imageElement] : [];
+    } else if (journalDest === 'bias') {
+      localPrefill.biais_timeframe = mapperTimeframe(timeframe);
+      localPrefill.biais_direction = trade.direction === 'long' ? 'Haussier' : 'Baissier';
+      localPrefill.biais_images = imageElement ? [imageElement] : [];
+    } else if (journalDest === 'poi') {
+      localPrefill.poi_timeframe = mapperTimeframe(timeframe);
+      localPrefill.poi_images = imageElement ? [imageElement] : [];
+      // On pré-remplit également les prix pour faciliter la saisie
+      localPrefill.entry_price = trade.prixEntree.toFixed(5);
+      localPrefill.entry_sl = trade.stopLoss.toFixed(5);
+      localPrefill.entry_tp = trade.takeProfit.toFixed(5);
+    } else if (journalDest === 'confirmation') {
+      localPrefill.entry_timeframe = mapperTimeframe(timeframe);
+      localPrefill.entry_price = trade.prixEntree.toFixed(5);
+      localPrefill.entry_sl = trade.stopLoss.toFixed(5);
+      localPrefill.entry_tp = trade.takeProfit.toFixed(5);
+      localPrefill.rr_planned = rr;
+      localPrefill.rr_realized = rrRealise;
+      localPrefill.exit_type = trade.resultat === 'win' ? 'tp' : trade.resultat === 'loss' ? 'sl' : 'breakeven';
+      localPrefill.entry_images = imageElement ? [imageElement] : [];
+    }
+
+    console.log('📡 [Backtest] Pré-remplissage du formulaire avec :', localPrefill);
+    openNewTradeWithPrefill(localPrefill);
+    addToast(`Formulaire du journal (${journalDest}) pré-rempli avec succès !`, 'success');
   };
 
   // ─── Capture manuelle à la volée ─────────────────────────────────────────────
@@ -469,6 +518,24 @@ export function BacktestWorkspace() {
               {tf.label}
             </button>
           ))}
+        </div>
+
+        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
+
+        {/* Sélection du journal de destination */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className={`text-[11px] ${C.textMuted}`}>Journal :</span>
+          <select
+            value={journalDest}
+            onChange={(e) => setJournalDest(e.target.value as any)}
+            className={`border-0 rounded px-2 py-1 text-[12px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
+            title="Journal de trading de destination pour l'exportation des trades"
+          >
+            <option value="global">📋 Global</option>
+            <option value="bias">🎯 Biais</option>
+            <option value="poi">🗺️ POI</option>
+            <option value="confirmation">⚡ Confirmation</option>
+          </select>
         </div>
 
         {/* Saisie du nombre de bougies à charger */}
@@ -817,7 +884,10 @@ export function BacktestWorkspace() {
                                   Capture du graphique...
                                 </>
                               ) : (
-                                'Enregistrer dans le Journal'
+                                journalDest === 'global' ? 'Enregistrer dans Global' :
+                                journalDest === 'bias' ? 'Enregistrer dans Biais' :
+                                journalDest === 'poi' ? 'Enregistrer dans POI' :
+                                'Enregistrer dans Confirmation'
                               )}
                             </button>
                           );

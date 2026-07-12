@@ -7,6 +7,7 @@ import {
   ISeriesApi,
   Time,
 } from 'lightweight-charts';
+// @ts-ignore
 import {
   DrawingManager,
   getToolRegistry,
@@ -17,7 +18,7 @@ import {
   VerticalLine,
   Ray,
   ExtendedLine,
-} from 'lightweight-charts-drawing';
+} from '@/lib/lightweight-charts-drawing-custom';
 import { useBacktestStore, type PositionSimulee } from '@/store/backtestStore';
 
 // ─── 🛠️ Seuils de détection tactile élargis ──────────────────────────────────
@@ -328,7 +329,7 @@ export const BacktestChart = React.forwardRef<
 
       ancres.forEach((ancre) => {
         ctx.beginPath();
-        ctx.arc(ancre.px, ancre.py, 5, 0, Math.PI * 2);
+        ctx.arc(ancre.px, ancre.py, 7.5, 0, Math.PI * 2);
         ctx.fillStyle = couleur;
         ctx.fill();
       });
@@ -503,7 +504,7 @@ export const BacktestChart = React.forwardRef<
       ctx.strokeStyle = '#2196F3';
       [[xStart, yEntry], [xStart, ySL], [xStart, yTP]].forEach(([x, y]) => {
         ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.arc(x, y, 7.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       });
@@ -512,7 +513,7 @@ export const BacktestChart = React.forwardRef<
       ctx.fillStyle = '#9C27B0';
       ctx.strokeStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(xStart + widthPx, yEntry, 5.5, 0, Math.PI * 2);
+      ctx.arc(xStart + widthPx, yEntry, 8.25, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
@@ -520,7 +521,7 @@ export const BacktestChart = React.forwardRef<
       ctx.fillStyle = '#FFEB3B';
       ctx.strokeStyle = '#f59e0b';
       ctx.beginPath();
-      ctx.arc(xStart + durationPx, yEntry, 5.5, 0, Math.PI * 2);
+      ctx.arc(xStart + durationPx, yEntry, 8.25, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
@@ -528,7 +529,7 @@ export const BacktestChart = React.forwardRef<
       ctx.fillStyle = '#FF9800';
       ctx.strokeStyle = '#ffffff';
       ctx.beginPath();
-      ctx.rect(xStart + widthPx / 2 - 4.5, yEntry - 4.5, 9, 9);
+      ctx.rect(xStart + widthPx / 2 - 6.75, yEntry - 6.75, 13.5, 13.5);
       ctx.fill();
       ctx.stroke();
 
@@ -593,7 +594,7 @@ export const BacktestChart = React.forwardRef<
       { x: xStart + widthPx / 2, y: yEntry } // 5 : Déplacement (Orange)
     ];
 
-    const seuilClic = 12; // Rayon de 12px pour une détection tactile et souris très confortable
+    const seuilClic = 18; // Rayon de 18px pour une détection tactile et souris très confortable
     for (let i = 0; i < poignees.length; i++) {
       const dist = Math.hypot(px - poignees[i].x, py - poignees[i].y);
       if (dist <= seuilClic) {
