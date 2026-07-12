@@ -10,17 +10,210 @@ import {
 import {
   DrawingManager,
   getToolRegistry,
+  LongPosition,
+  ShortPosition,
+  TrendLine,
+  Rectangle,
+  FibRetracement,
+  HorizontalLine,
+  VerticalLine,
+  Ray,
+  ExtendedLine,
+  LongPositionPaneView,
+  ShortPositionPaneView,
 } from 'lightweight-charts-drawing';
 import { useBacktestStore } from '@/store/backtestStore';
 
-// ─── Correspondance outil → nombre d'ancres et instructions ─────────────────
-// Définit combien de clics sont nécessaires et ce qu'il faut expliquer à l'utilisateur.
-// ⚠️ Pour les outils de position Long/Short, l'ordre des ancres attendu par la librairie
-// de dessin est : [0] = Entrée, [1] = Stop Loss, [2] = Take Profit.
+// ─── 🛠️ SEUILS DE DÉTECTION ET TACTILE (Hit Threshold) ──────────────────────
+// Augmentation globale des seuils de détection à 30px (au lieu de 5px par défaut)
+// pour simplifier la sélection des dessins avec de gros doigts sur tablette.
+try {
+  (LongPosition as any).HIT_THRESHOLD = 30;
+  (ShortPosition as any).HIT_THRESHOLD = 30;
+  (TrendLine as any).HIT_THRESHOLD = 30;
+  (Rectangle as any).HIT_THRESHOLD = 30;
+  (FibRetracement as any).HIT_THRESHOLD = 30;
+  (HorizontalLine as any).HIT_THRESHOLD = 30;
+  (VerticalLine as any).HIT_THRESHOLD = 30;
+  (Ray as any).HIT_THRESHOLD = 30;
+  (ExtendedLine as any).HIT_THRESHOLD = 30;
+  console.log('✅ [BacktestChart] HIT_THRESHOLD augmenté à 30px pour le tactile.');
+} catch (e) {
+  console.warn('[BacktestChart] Impossible d\'augmenter HIT_THRESHOLD :', e);
+}
+
+// Helper pour tracer une ligne sur le canvas (comme le helper interne `b` de la lib)
+function dessinerLigne(ctx: CanvasRenderingContext2D, p1: { x: number; y: number }, p2: { x: number; y: number }, pixelRatio: number) {
+  ctx.beginPath();
+  ctx.moveTo(p1.x * pixelRatio, p1.y * pixelRatio);
+  ctx.lineTo(p2.x * pixelRatio, p2.y * pixelRatio);
+  ctx.stroke();
+}
+
+// ─── 🐒 MONKEYPATCHING DES RENDERERS LONG & SHORT POSITION ──────────────────
+// Remplace le code de rendu par défaut des positions pour lire une 4ème ancre (index 3)
+// si elle est définie, afin de pouvoir élargir horizontalement la position par glissement (Drag).
+const patcherRenduPosition = (PaneViewClass: any) => {
+  try {
+    const instanceFactice = new PaneViewClass({
+      isValid: () => false,
+      options: { visible: false },
+      anchors: [],
+      positionOptions: {},
+      getPositionInfo: () => ({
+        entry: 0,
+        stopLoss: 0,
+        takeProfit: 0,
+        risk: 0,
+        reward: 0,
+        riskRewardRatio: 0,
+        riskPercent: 0,
+        rewardPercent: 0
+      }),
+    });
+    const renderer = instanceFactice.renderer();
+    if (!renderer) return;
+
+    const proto = Object.getPrototypeOf(renderer);
+    if (proto && typeof proto.drawImpl === 'function') {
+      proto.drawImpl = function (i: any) {
+        const { context: t, horizontalPixelRatio: s } = i;
+        const e = s;
+        const n = this._drawing.getViewport();
+        if (!n || !this._drawing.options.visible || !this._drawing.isValid()) return;
+        const o = this._drawing.anchors;
+        const r = this._drawing.anchorToPixel(o[0], n);
+        const a = this._drawing.anchorToPixel(o[1], n);
+        const c = this._drawing.anchorToPixel(o[2], n);
+        if (!r || !a || !c) return;
+
+        const l = this._drawing.positionOptions;
+        const h = this._drawing.getPositionInfo();
+
+        // ⚠️ Notre modification majeure :
+        // Si une 4ème ancre est présente, sa coordonnée X sert de largeur (en pixels)
+        let d = 200; // Largeur par défaut originale
+        if (o.length >= 4) {
+          const pixelEnd = this._drawing.anchorToPixel(o[3], n);
+          if (pixelEnd) {
+            d = Math.max(30, pixelEnd.x - r.x);
+          }
+        }
+
+        const estLong = this._drawing.type === "long-position";
+
+        t.save();
+
+        // 1️⃣ Zone de Stop Loss (Rouge transparent)
+        t.fillStyle = "rgba(239, 83, 80, 0.25)";
+        const f = Math.min(r.y, a.y);
+        const g = Math.abs(a.y - r.y);
+        t.fillRect(r.x * e, f * e, d * e, g * e);
+        t.strokeStyle = "#ef5350";
+        t.lineWidth = 1 * e;
+        t.strokeRect(r.x * e, f * e, d * e, g * e);
+
+        // 2️⃣ Zone de Take Profit (Vert transparent)
+        t.fillStyle = "rgba(38, 166, 154, 0.25)";
+        const _ = Math.min(r.y, c.y);
+        const y = Math.abs(c.y - r.y);
+        t.fillRect(r.x * e, _ * e, d * e, y * e);
+        t.strokeStyle = "#26a69a";
+        t.lineWidth = 1 * e;
+        t.strokeRect(r.x * e, _ * e, d * e, y * e);
+
+        // 3️⃣ Ligne de prix d'entrée (Bleu)
+        t.strokeStyle = "#2196F3";
+        t.lineWidth = 2 * e;
+        dessinerLigne(t, { x: r.x, y: r.y }, { x: r.x + d, y: r.y }, e);
+
+        // 4️⃣ Ligne de Stop Loss (Rouge pointillé)
+        t.strokeStyle = "#ef5350";
+        t.lineWidth = 1.5 * e;
+        t.setLineDash([5 * e, 3 * e]);
+        dessinerLigne(t, { x: r.x, y: a.y }, { x: r.x + d, y: a.y }, e);
+
+        // 5️⃣ Ligne de Take Profit (Vert continu)
+        t.strokeStyle = "#26a69a";
+        t.lineWidth = 1.5 * e;
+        t.setLineDash([]);
+        dessinerLigne(t, { x: r.x, y: c.y }, { x: r.x + d, y: c.y }, e);
+
+        // 6️⃣ Libellés textuels sur la droite
+        const xText = 11;
+        t.font = `${xText * e}px sans-serif`;
+        t.textAlign = "left";
+        t.textBaseline = "middle";
+        const w = r.x + d + 5;
+
+        t.fillStyle = "#2196F3";
+        let textEntry = "Entrée";
+        if (l.showPrices) textEntry += `: $${h.entry.toFixed(2)}`;
+        t.fillText(textEntry, w * e, r.y * e);
+
+        t.fillStyle = "#ef5350";
+        let textSL = "SL";
+        if (l.showPrices) textSL += `: $${h.stopLoss.toFixed(2)}`;
+        if (l.showPercentage) textSL += ` (-${h.riskPercent.toFixed(2)}%)`;
+        t.fillText(textSL, w * e, a.y * e);
+
+        t.fillStyle = "#26a69a";
+        let textTP = "TP";
+        if (l.showPrices) textTP += `: $${h.takeProfit.toFixed(2)}`;
+        if (l.showPercentage) textTP += ` (+${h.rewardPercent.toFixed(2)}%)`;
+        t.fillText(textTP, w * e, c.y * e);
+
+        if (l.showRiskReward) {
+          t.fillStyle = "#ffffff";
+          const rrText = `R:R = 1:${h.riskRewardRatio.toFixed(2)}`;
+          const middleY = (r.y + c.y) / 2;
+          t.fillText(rrText, (r.x + 10) * e, middleY * e);
+        }
+
+        // Tag LONG / SHORT
+        t.fillStyle = estLong ? "#26a69a" : "#ef5350";
+        t.font = `bold ${13 * e}px sans-serif`;
+        t.fillText(estLong ? "LONG" : "SHORT", (r.x + 10) * e, (r.y - 15) * e);
+
+        // 7️⃣ Points d'ancrage (handles de glissement)
+        const state = this._drawing.state;
+        if (state === "selected" || state === "editing") {
+          const points = this._drawing.getControlPoints(n);
+          t.fillStyle = "#ffffff";
+          t.strokeStyle = "#2196F3";
+          t.lineWidth = 2 * e;
+
+          for (const pt of points) {
+            let py = pt.y;
+            // Pour l'ancre d'élargissement (index 3), on la verrouille visuellement sur la ligne d'entrée bleue
+            if (pt.index === 3) {
+              py = r.y;
+            }
+            t.beginPath();
+            t.arc(pt.x * e, py * e, 6 * e, 0, Math.PI * 2); // Cercles légèrement plus grands (6)
+            t.fill();
+            t.stroke();
+          }
+        }
+
+        t.restore();
+      };
+    }
+  } catch (err) {
+    console.error('Erreur lors du monkeypatching de la classe de rendu :', err);
+  }
+};
+
+// Application automatique du patch
+patcherRenduPosition(LongPositionPaneView);
+patcherRenduPosition(ShortPositionPaneView);
+
+
+// ─── CONFIGURATION OUTILS DESSIN ─────────────────────────────────────────────
 const CONFIG_OUTILS: Record<string, {
   ancres: 1 | 2 | 3;
-  instructions: string[];   // Message pour chaque étape
-  couleurPreview: string;   // Couleur du trait de prévisualisation
+  instructions: string[];
+  couleurPreview: string;
 }> = {
   'horizontal-line': {
     ancres: 1,
@@ -83,22 +276,11 @@ interface BacktestChartProps {
   theme: 'dark' | 'light';
 }
 
-// Palettes de couleurs par thème
 const THEMES = {
   dark: { background: '#131722', text: '#b2b5be', grid: '#1e222d' },
   light: { background: '#ffffff', text: '#131722', grid: '#f0f3fa' },
 };
 
-/**
- * Composant principal du graphique de Backtesting.
- * 
- * Gestion de l'affichage interactif :
- * 1. Chaque clic sur le graphique est capturé manuellement.
- * 2. Les coordonnées sont converties en date/prix.
- * 3. Un canvas overlay transparent dessine la prévisualisation en temps réel (pointillés).
- * 4. P&L temps réel : Si un trade est actif, le chemin parcouru depuis le prix d'entrée
- *    est ombré en vert (gain) ou en rouge (perte) avec affichage du PnL en %.
- */
 export function BacktestChart({ activeTool, height, theme }: BacktestChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -108,20 +290,15 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
   const ouvrirPosition = useBacktestStore((s) => s.ouvrirPosition);
   const positionActive = useBacktestStore((s) => s.positionActive);
 
-  // Références persistantes au graphique
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const managerRef = useRef<DrawingManager | null>(null);
 
-  // État de l'outil en cours (ancres déjà posées + position souris)
   const [etapeActuelle, setEtapeActuelle] = useState(0);
   const ancresEnCoursRef = useRef<Array<{ time: any; price: number; px: number; py: number }>>([]);
   const sourisPixelRef = useRef<{ x: number; y: number } | null>(null);
-
-  // ID du dessin sélectionné pour suppression
   const [idDessinSelectionne, setIdDessinSelectionne] = useState<string | null>(null);
 
-  // Référence persistante pour éviter les fermetures obsolètes dans les callbacks d'événements
   const stateRef = useRef({
     activeTool,
     indexCourant,
@@ -141,7 +318,6 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     redessinerOverlay();
   }, [activeTool, indexCourant, positionActive, donneesCompletes, theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Dessin complet de la prévisualisation et du P&L actif sur l'overlay ───
   const redessinerOverlay = useCallback(() => {
     const canvas = overlayCanvasRef.current;
     if (!canvas) return;
@@ -162,13 +338,12 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
 
     if (!chart || !series) return;
 
-    // 1️⃣ Affichage de l'ombrage dynamique P&L (style TradingView)
+    // 1️⃣ Ombrage dynamique du P&L actif
     if (currentPos && currentIndex < currentData.length) {
       const bougieEntreeTime = currentPos.dateEntree;
       const bougieActuelle = currentData[currentIndex];
 
       if (bougieActuelle) {
-        // Conversion coordonnées
         const xEntry = chart.timeScale().timeToCoordinate(bougieEntreeTime as Time);
         const xCurrent = chart.timeScale().timeToCoordinate(bougieActuelle.time as Time);
         const yEntry = series.priceToCoordinate(currentPos.prixEntree);
@@ -180,20 +355,14 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
           const y = Math.min(yEntry, yCurrent);
           const heightBox = Math.abs(yCurrent - yEntry);
 
-          // Profit si le prix va dans le bon sens
-          // Rappel : l'axe Y du canvas augmente vers le BAS (yCurrent < yEntry = hausse du prix)
           const estProfit = currentPos.direction === 'long'
             ? yCurrent < yEntry
             : yCurrent > yEntry;
 
           ctx.save();
-          // Couleur de fond semi-transparente
-          ctx.fillStyle = estProfit
-            ? 'rgba(38, 166, 154, 0.25)' // Vert TradingView
-            : 'rgba(239, 83, 80, 0.25)';  // Rouge TradingView
+          ctx.fillStyle = estProfit ? 'rgba(38, 166, 154, 0.25)' : 'rgba(239, 83, 80, 0.25)';
           ctx.fillRect(x, y, width, heightBox);
 
-          // Ligne verticale de progression du prix
           ctx.strokeStyle = estProfit ? '#26a69a' : '#ef5350';
           ctx.lineWidth = 1.5;
           ctx.beginPath();
@@ -201,7 +370,6 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
           ctx.lineTo(xCurrent, yCurrent);
           ctx.stroke();
 
-          // Calcul et affichage du PnL flottant en %
           const pnlPct = currentPos.direction === 'long'
             ? ((bougieActuelle.close - currentPos.prixEntree) / currentPos.prixEntree) * 100
             : ((currentPos.prixEntree - bougieActuelle.close) / currentPos.prixEntree) * 100;
@@ -219,7 +387,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       }
     }
 
-    // 2️⃣ Dessin de la prévisualisation de l'outil en cours de tracé
+    // 2️⃣ Dessin preview outil de tracé
     const config = currentTool ? CONFIG_OUTILS[currentTool] : null;
     const ancres = ancresEnCoursRef.current;
     const souris = sourisPixelRef.current;
@@ -232,7 +400,6 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       ctx.setLineDash([5, 5]);
       ctx.globalAlpha = 0.8;
 
-      // Points d'ancrage déjà posés
       ancres.forEach((ancre) => {
         ctx.beginPath();
         ctx.arc(ancre.px, ancre.py, 5, 0, Math.PI * 2);
@@ -240,7 +407,6 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
         ctx.fill();
       });
 
-      // Ligne élastique vers la souris
       if (ancres.length >= 1) {
         const derniere = ancres[ancres.length - 1];
         ctx.beginPath();
@@ -252,7 +418,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     }
   }, []);
 
-  // ─── 1. Initialisation unique du graphique ─────────────────────────────────
+  // ─── Initialisation unique ──────────────────────────────────────────────────
   useEffect(() => {
     if (!chartContainerRef.current) return;
     console.log('🚀 [BacktestChart] Initialisation du graphique...');
@@ -295,7 +461,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     manager.attach(chart, series as ISeriesApi<any>, chartContainerRef.current);
     managerRef.current = manager;
 
-    // Événements de sélection du DrawingManager
+    // Abonnements DrawingManager
     const desabonnerSelection = manager.on('drawing:selected', (event: any) => {
       setIdDessinSelectionne(event.drawingId ?? null);
     });
@@ -306,11 +472,36 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       setIdDessinSelectionne(null);
     });
 
-    // Callback pour redessiner l'overlay lors des changements d'échelle / scroll
     const gererScale = () => {
       redessinerOverlay();
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(gererScale);
+
+    // ─── 📱 ROUTAGE TACTILE / TABLETTE ─────────────────────────────────────
+    // Transfert des événements Pointer tactiles directement vers le DrawingManager
+    // pour permettre de déplacer les dessins et les ancres du bout du doigt.
+    const conteneur = chartContainerRef.current;
+    
+    const gererPointerDownTactile = (e: PointerEvent) => {
+      // Uniquement si aucun outil de dessin n'est sélectionné et que c'est du tactile
+      if (stateRef.current.activeTool === null && e.pointerType === 'touch') {
+        (manager as any).handleMouseDown(e);
+      }
+    };
+    const gererPointerMoveTactile = (e: PointerEvent) => {
+      if (stateRef.current.activeTool === null && e.pointerType === 'touch') {
+        (manager as any).handleMouseMove(e);
+      }
+    };
+    const gererPointerUpTactile = (e: PointerEvent) => {
+      if (stateRef.current.activeTool === null && e.pointerType === 'touch') {
+        (manager as any).handleMouseUp(e);
+      }
+    };
+
+    conteneur.addEventListener('pointerdown', gererPointerDownTactile, true);
+    conteneur.addEventListener('pointermove', gererPointerMoveTactile, true);
+    conteneur.addEventListener('pointerup', gererPointerUpTactile, true);
 
     const observateur = new ResizeObserver(() => {
       if (chartContainerRef.current && chartRef.current) {
@@ -327,6 +518,11 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       desabonnerDeselection();
       desabonnerSuppression();
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(gererScale);
+      
+      conteneur.removeEventListener('pointerdown', gererPointerDownTactile, true);
+      conteneur.removeEventListener('pointermove', gererPointerMoveTactile, true);
+      conteneur.removeEventListener('pointerup', gererPointerUpTactile, true);
+      
       manager.detach();
       chart.remove();
       observateur.disconnect();
@@ -336,22 +532,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── 5. Synchronisation des données du replay ───────────────────────────────
-  useEffect(() => {
-    if (!seriesRef.current || donneesCompletes.length === 0) return;
-    const donneesVisibles = donneesCompletes
-      .slice(0, indexCourant + 1)
-      .map((b) => ({ ...b, time: b.time as Time }));
-    seriesRef.current.setData(donneesVisibles);
-
-    // Force le graphique à scroller en laissant une marge de 15 bougies sur la droite.
-    // Ainsi, la bougie active reste en place et le graphique se décale proprement vers la gauche.
-    if (chartRef.current) {
-      chartRef.current.timeScale().scrollToPosition(15, false);
-    }
-  }, [donneesCompletes, indexCourant]);
-
-  // ─── 2. Changement de thème ─────────────────────────────────────────────────
+  // Thème
   useEffect(() => {
     if (!chartRef.current) return;
     const couleurs = THEMES[theme];
@@ -365,14 +546,14 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     redessinerOverlay();
   }, [theme, redessinerOverlay]);
 
-  // ─── 3. Changement de hauteur ───────────────────────────────────────────────
+  // Hauteur
   useEffect(() => {
     if (chartRef.current) chartRef.current.applyOptions({ height });
     if (overlayCanvasRef.current) overlayCanvasRef.current.height = height;
     redessinerOverlay();
   }, [height, redessinerOverlay]);
 
-  // ─── 4. Suppression du dessin sélectionné ───────────────────────────────────
+  // Suppression clavier
   useEffect(() => {
     const gererTouche = (e: KeyboardEvent) => {
       if (activeTool !== null) return;
@@ -394,7 +575,20 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     setIdDessinSelectionne(null);
   };
 
-  // ─── 5. Gestion des outils de tracé interactifs ─────────────────────────────
+  // Replay data sync
+  useEffect(() => {
+    if (!seriesRef.current || donneesCompletes.length === 0) return;
+    const donneesVisibles = donneesCompletes
+      .slice(0, indexCourant + 1)
+      .map((b) => ({ ...b, time: b.time as Time }));
+    seriesRef.current.setData(donneesVisibles);
+
+    if (chartRef.current) {
+      chartRef.current.timeScale().scrollToPosition(15, false);
+    }
+  }, [donneesCompletes, indexCourant]);
+
+  // Gestion tracé interactif
   useEffect(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
@@ -402,7 +596,6 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     const conteneur = chartContainerRef.current;
     const canvas = overlayCanvasRef.current;
 
-    // Reset
     setEtapeActuelle(0);
     ancresEnCoursRef.current = [];
     sourisPixelRef.current = null;
@@ -423,7 +616,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
     if (!config) return;
 
     conteneur.style.cursor = 'crosshair';
-    conteneur.style.touchAction = 'none'; // Désactive le scroll de la page lors du tracé sur tablette
+    conteneur.style.touchAction = 'none';
 
     const eventToAncre = (event: PointerEvent) => {
       const rect = conteneur.getBoundingClientRect();
@@ -451,17 +644,24 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
 
       if (nouvelleEtape >= config.ancres) {
         const ancresFinales = ancresEnCoursRef.current.map((a) => ({ time: a.time, price: a.price }));
+        
+        // ⚠️ Notre modification majeure :
+        // Pour les positions Long/Short, on rajoute automatiquement une 4ème ancre (index 3)
+        // placée 15 bougies plus loin, qui servira de poignée d'élargissement horizontale (Drag handle).
+        if (activeTool === 'long-position' || activeTool === 'short-position') {
+          const indexFutur = Math.min(indexCourant + 15, donneesCompletes.length - 1);
+          const tempsFutur = donneesCompletes[indexFutur]?.time ?? ancresFinales[0].time;
+          ancresFinales.push({ time: tempsFutur, price: ancresFinales[0].price });
+        }
+
         const idUnique = `${activeTool}-${Date.now()}`;
         const dessin = getToolRegistry().createDrawing(activeTool, idUnique, ancresFinales, {}, {});
 
         if (dessin) {
           manager.addDrawing(dessin);
 
-          // Si c'est une position, on l'enregistre dans le store de backtesting
           if (activeTool === 'long-position' || activeTool === 'short-position') {
             const direction = activeTool === 'long-position' ? 'long' as const : 'short' as const;
-            // ⚠️ Alignement parfait avec la bibliothèque :
-            // ancresFinales[0] = prix entrée, [1] = Stop Loss, [2] = Take Profit
             const prixEntree = ancresFinales[0].price;
             const prixSL = ancresFinales[1].price;
             const prixTP = ancresFinales[2].price;
@@ -476,7 +676,6 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       }
     };
 
-    // Utilisation de la phase de capture (true) et des PointerEvents pour unifier souris et tactile (tablette)
     conteneur.addEventListener('pointerdown', gererClic, true);
     conteneur.addEventListener('pointermove', gererMouvement, true);
 
@@ -489,7 +688,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
       sourisPixelRef.current = null;
       redessinerOverlay();
     };
-  }, [activeTool, ouvrirPosition, redessinerOverlay]);
+  }, [activeTool, indexCourant, donneesCompletes, ouvrirPosition, redessinerOverlay]);
 
   const config = activeTool ? CONFIG_OUTILS[activeTool] : null;
   const messageInstruction = config
@@ -499,7 +698,7 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
 
   return (
     <div className="relative w-full h-full flex flex-col">
-      {/* Barre de statut / instructions */}
+      {/* Barre de statut */}
       <div className={`flex items-center gap-3 px-4 py-2 text-[11px] border-b flex-shrink-0 transition-colors
         ${theme === 'dark' ? 'bg-[#1e222d] border-[#2a2e39] text-[#787b86]' : 'bg-[#f0f3fa] border-[#e0e3eb] text-[#434651]'}`}
       >
@@ -515,8 +714,8 @@ export function BacktestChart({ activeTool, height, theme }: BacktestChartProps)
             <span className="opacity-50">↖</span>
             <span>
               {activeTool === null
-                ? 'Mode Sélection — Cliquez sur un dessin pour le modifier/supprimer ou déplacer ses ancres'
-                : 'Outil de dessin sélectionné — cliquez sur le graphique pour commencer'
+                ? 'Mode Sélection — Touchez/cliquez un dessin pour le modifier ou le faire glisser'
+                : 'Outil de dessin sélectionné — cliquez/touchez le graphique pour commencer'
               }
             </span>
           </>
