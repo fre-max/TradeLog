@@ -145,6 +145,7 @@ export const BacktestChart = React.forwardRef<
   const indexCourant = useBacktestStore((s) => s.indexCourant);
   const ouvrirPosition = useBacktestStore((s) => s.ouvrirPosition);
   const positionActive = useBacktestStore((s) => s.positionActive);
+  const estEnLecture = useBacktestStore((s) => s.estEnLecture);
 
   // Référence mutable pour éviter le stale closure du scroll handler
   const scrollRef = useRef(onScrollToLeft);
@@ -216,6 +217,32 @@ export const BacktestChart = React.forwardRef<
   // ─── État des positions canvas (notre système custom) ────────────────────────
   const [positionsCanvas, setPositionsCanvas] = useState<PositionCanvas[]>([]);
   const [positionSelectionneeId, setPositionSelectionneeId] = useState<string | null>(null);
+
+  // Synchronisation de la position active du store Zustand vers les positions du canvas
+  useEffect(() => {
+    if (positionActive) {
+      const positionId = 'active-position';
+      const mappingActive: PositionCanvas = {
+        id: positionId,
+        direction: positionActive.direction,
+        prixEntree: positionActive.prixEntree,
+        prixSL: positionActive.stopLoss,
+        prixTP: positionActive.takeProfit,
+        indexEntree: positionActive.indexEntree,
+        dureeEstimeeLargeur: positionActive.dureeEstimeeLargeur ?? 30,
+        dureeEstimeeBougies: positionActive.dureeEstimeeBougies ?? 12,
+        dureeEstimeeHeures: positionActive.dureeEstimeeHeures,
+        selected: false,
+      };
+
+      setPositionsCanvas((prev) => {
+        const sansActive = prev.filter((p) => p.id !== positionId);
+        return [...sansActive, mappingActive];
+      });
+    } else {
+      setPositionsCanvas((prev) => prev.filter((p) => p.id !== 'active-position'));
+    }
+  }, [positionActive]);
 
   // ─── État pour le Drag-and-Drop des poignées ─────────────────────────────────
   const [dragAction, setDragAction] = useState<{
@@ -911,17 +938,46 @@ export const BacktestChart = React.forwardRef<
     redessinerOverlay();
   }, [height, redessinerOverlay]);
 
+  const dernierActifRef = useRef<string>('');
+  const prevDonneesLengthRef = useRef<number>(0);
+
   // Replay sync
   useEffect(() => {
     if (!seriesRef.current || donneesCompletes.length === 0) return;
+
+    const timeScale = chartRef.current?.timeScale();
+    const rangeVisuellePrecedente = timeScale ? timeScale.getVisibleLogicalRange() : null;
+
     const donneesVisibles = donneesCompletes
       .slice(0, indexCourant + 1)
       .map((b) => ({ ...b, time: b.time as Time }));
     seriesRef.current.setData(donneesVisibles);
-    if (chartRef.current) {
-      chartRef.current.timeScale().scrollToPosition(15, false);
+
+    if (chartRef.current && timeScale) {
+      const actifActuel = useBacktestStore.getState().actif;
+      const estPremierChargementActif = dernierActifRef.current !== actifActuel;
+
+      if (estPremierChargementActif) {
+        dernierActifRef.current = actifActuel;
+        timeScale.scrollToPosition(15, false);
+      } else if (estEnLecture) {
+        timeScale.scrollToPosition(15, false);
+      } else if (rangeVisuellePrecedente) {
+        // En cas d'injection de données plus anciennes (défilement infini vers le passé)
+        // La longueur du tableau augmente. Nous décalons le scroll logique pour conserver
+        // les mêmes bougies affichées à l'écran sans aucun sursaut visuel.
+        const decalage = donneesCompletes.length - prevDonneesLengthRef.current;
+        if (decalage > 0) {
+          timeScale.setVisibleLogicalRange({
+            from: rangeVisuellePrecedente.from + decalage,
+            to: rangeVisuellePrecedente.to + decalage,
+          });
+        }
+      }
     }
-  }, [donneesCompletes, indexCourant]);
+
+    prevDonneesLengthRef.current = donneesCompletes.length;
+  }, [donneesCompletes, indexCourant, estEnLecture]);
 
   // Désactive temporairement le défilement et le zoom du graphique de Lightweight Charts
   // pendant qu'une poignée de position custom est en train d'être déplacée (dragAction actif).

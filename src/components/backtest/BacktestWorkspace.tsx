@@ -225,7 +225,7 @@ export function BacktestWorkspace() {
     console.log(`⏱️ [Re-Aggregation] Changement d'UT vers ${timeframe}. Ré-agrégation des données M1...`);
     const bougiesAgregees = agregerBougies(donneesM1Chargees, timeframe);
     mettreAJourDonneesMtf(bougiesAgregees);
-    addToast(`Données ré-agrégées en ${timeframe} — ${bougiesAgregees.length} bougies générées`, 'info');
+    console.log(`⏱️ [Re-Aggregation] Données ré-agrégées en ${timeframe} — ${bougiesAgregees.length} bougies générées`);
   }, [timeframe, donneesM1Chargees, mettreAJourDonneesMtf]);
 
   // ─── Boucle de lecture du Replay ─────────────────────────────────────────────
@@ -351,7 +351,7 @@ export function BacktestWorkspace() {
     const nomFichier = `${paireActive}_M1_${anneePrecedente}.csv.gz`;
     const url = `https://cdn.jsdelivr.net/gh/fre-max/Forex_Data@main/forex_data/${nomFichier}`;
 
-    addToast(`☁️ Chargement de l'année ${anneePrecedente} depuis le Cloud...`, 'info');
+    console.log(`☁️ [Cloud Loader] Chargement de l'année ${anneePrecedente} depuis le Cloud...`);
     
     try {
       const reponse = await fetch(url);
@@ -377,7 +377,7 @@ export function BacktestWorkspace() {
       const injecterDonneesPrecedentes = useBacktestStore.getState().injecterDonneesPrecedentes;
       injecterDonneesPrecedentes(anciennesBougiesAgregees);
 
-      addToast(`✅ Année ${anneePrecedente} fusionnée avec succès (${anciennesBougiesAgregees.length} nouvelles bougies en ${timeframe})`, 'success');
+      console.log(`✅ [Cloud Loader] Année ${anneePrecedente} fusionnée avec succès (${anciennesBougiesAgregees.length} nouvelles bougies en ${timeframe})`);
     } catch (err: any) {
       console.error(`[Cloud Loader] Erreur lors du chargement de l'année ${anneePrecedente}:`, err);
     } finally {
