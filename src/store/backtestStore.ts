@@ -56,6 +56,8 @@ interface BacktestState {
   supprimerTradeHistorique: (index: number) => void;
   reinitialiserSession: () => void;
   couperReplayAIndex: (index: number) => void;
+  injecterDonneesPrecedentes: (anciennesDonnees: Bougie[]) => void;
+  mettreAJourDonneesMtf: (nouvellesDonnees: Bougie[]) => void;
 }
 
 export const useBacktestStore = create<BacktestState>((set, get) => ({
@@ -71,7 +73,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   // Par défaut, on affiche les 150 premières bougies pour donner du contexte au trader
   chargerDonnees: (donnees, nomActif) => {
     console.log(`🚀 [Backtest Store] Chargement de ${donnees.length} bougies pour ${nomActif}`);
-    const indexInitial = Math.min(150, donnees.length - 1);
+    const indexInitial = donnees.length - 1;
     set({
       actif: nomActif,
       donneesCompletes: donnees,
@@ -79,6 +81,111 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       estEnLecture: false,
       positionActive: null,
       historiqueSimule: [],
+    });
+  },
+
+  // Injecte des données plus anciennes au début de la série (défilement infini vers le passé)
+  injecterDonneesPrecedentes: (anciennesDonnees) => {
+    const { donneesCompletes, indexCourant, positionActive, historiqueSimule } = get();
+    if (anciennesDonnees.length === 0) return;
+
+    console.log(`📥 [Backtest Store] Injection de ${anciennesDonnees.length} anciennes bougies au début.`);
+    
+    // Concaténer les anciennes données suivies par les données actuelles
+    const nouvellesDonnees = [...anciennesDonnees, ...donneesCompletes];
+    
+    // Décalage nécessaire de tous les index référencés
+    const decalage = anciennesDonnees.length;
+    const nouvelIndexCourant = indexCourant + decalage;
+
+    let positionMiseAJour = null;
+    if (positionActive) {
+      positionMiseAJour = {
+        ...positionActive,
+        indexEntree: positionActive.indexEntree + decalage,
+        indexSortie: positionActive.indexSortie !== undefined ? positionActive.indexSortie + decalage : undefined,
+      };
+    }
+
+    const historiqueMiseAJour = historiqueSimule.map((p) => ({
+      ...p,
+      indexEntree: p.indexEntree + decalage,
+      indexSortie: p.indexSortie !== undefined ? p.indexSortie + decalage : undefined,
+    }));
+
+    set({
+      donneesCompletes: nouvellesDonnees,
+      indexCourant: nouvelIndexCourant,
+      positionActive: positionMiseAJour,
+      historiqueSimule: historiqueMiseAJour,
+    });
+  },
+
+  // Met à jour les données pour le changement d'unité de temps (MTF) sans réinitialiser la session
+  mettreAJourDonneesMtf: (nouvellesDonnees) => {
+    const { donneesCompletes, indexCourant, positionActive, historiqueSimule } = get();
+    if (nouvellesDonnees.length === 0) return;
+
+    console.log(`⏱️ [Backtest Store] Changement d'UT (MTF) : recalcul de la position et de l'historique...`);
+
+    // 1. Trouver le timestamp correspondant à l'indexCourant actuel
+    const bougieReference = donneesCompletes[indexCourant];
+    let timestampRef = bougieReference
+      ? (typeof bougieReference.time === 'number' ? bougieReference.time : Date.parse(bougieReference.time as string) / 1000)
+      : null;
+
+    // Helper pour trouver le nouvel index correspondant à une date dans les nouvelles données
+    const trouverNouvelIndex = (dateRef: string | number | undefined): number | undefined => {
+      if (dateRef === undefined) return undefined;
+      const tRef = typeof dateRef === 'number' ? dateRef : Date.parse(dateRef) / 1000;
+      if (isNaN(tRef)) return undefined;
+
+      // Trouver l'index de la bougie la plus proche <= tRef
+      let index = nouvellesDonnees.findIndex((b) => {
+        const t = typeof b.time === 'number' ? b.time : Date.parse(b.time as string) / 1000;
+        return t > tRef;
+      });
+
+      if (index === -1) return nouvellesDonnees.length - 1;
+      if (index > 0) return index - 1;
+      return 0;
+    };
+
+    // 2. Calculer le nouvel indexCourant
+    let nouvelIndexCourant = nouvellesDonnees.length - 1;
+    if (timestampRef !== null) {
+      const idx = trouverNouvelIndex(timestampRef);
+      if (idx !== undefined) nouvelIndexCourant = idx;
+    }
+
+    // 3. Recalculer les index de la position active
+    let positionActiveMiseAJour = null;
+    if (positionActive) {
+      const nouvelIndexEntree = trouverNouvelIndex(positionActive.dateEntree) ?? positionActive.indexEntree;
+      const nouvelIndexSortie = positionActive.dateSortie !== undefined ? trouverNouvelIndex(positionActive.dateSortie) : undefined;
+      positionActiveMiseAJour = {
+        ...positionActive,
+        indexEntree: nouvelIndexEntree,
+        indexSortie: nouvelIndexSortie,
+      };
+    }
+
+    // 4. Recalculer les index de l'historique
+    const historiqueMiseAJour = historiqueSimule.map((p) => {
+      const nouvelIndexEntree = trouverNouvelIndex(p.dateEntree) ?? p.indexEntree;
+      const nouvelIndexSortie = p.dateSortie !== undefined ? trouverNouvelIndex(p.dateSortie) : undefined;
+      return {
+        ...p,
+        indexEntree: nouvelIndexEntree,
+        indexSortie: nouvelIndexSortie,
+      };
+    });
+
+    set({
+      donneesCompletes: nouvellesDonnees,
+      indexCourant: nouvelIndexCourant,
+      positionActive: positionActiveMiseAJour,
+      historiqueSimule: historiqueMiseAJour,
     });
   },
 
@@ -168,7 +275,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     if (donneesCompletes.length === 0) return;
     
     set({
-      indexCourant: Math.min(150, donneesCompletes.length - 1),
+      indexCourant: donneesCompletes.length - 1,
       estEnLecture: false,
       positionActive: null,
       historiqueSimule: [],

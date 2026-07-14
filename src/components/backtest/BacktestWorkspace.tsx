@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useBacktestStore } from '@/store/backtestStore';
-import { recupererDonneesBinance, parserCsvPrix } from '@/lib/chartDataHelper';
+import { parserCsvPrix, agregerBougies } from '@/lib/chartDataHelper';
+import type { Bougie } from '@/lib/chartDataHelper';
 import { BacktestChart } from './BacktestChart';
 import { useUIStore } from '@/store';
 import type { PositionSimulee } from '@/store/backtestStore';
@@ -47,14 +48,7 @@ const TIMEFRAMES = [
   { label: '1M', value: '1M' },
 ];
 
-// Actifs disponibles (Crypto Binance — API publique gratuite)
-const ACTIFS = [
-  { label: 'BTC/USDT', value: 'BTCUSDT' },
-  { label: 'ETH/USDT', value: 'ETHUSDT' },
-  { label: 'SOL/USDT', value: 'SOLUSDT' },
-  { label: 'BNB/USDT', value: 'BNBUSDT' },
-  { label: 'XRP/USDT', value: 'XRPUSDT' },
-];
+
 
 // ─── Palettes de couleurs du Workspace selon le thème ─────────────────────────
 // Miroir des couleurs TradingView (sombre / clair)
@@ -103,17 +97,18 @@ export function BacktestWorkspace() {
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [outilActif, setOutilActif] = useState<string | null>(null);
-  const [symbole, setSymbole] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('1h');
   const [estPleinEcran, setEstPleinEcran] = useState(false);
-  // Thème graphique : 'dark' (fond noir TradingView) ou 'light' (fond blanc TradingView)
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
-  // Nombre de bougies à charger de l'API Binance (100 à 1000)
-  const [limiteBougies, setLimiteBougies] = useState(500);
 
   // Actifs et Années pour la banque de données Cloud personnelle (GitHub)
   const [paireCloud, setPaireCloud] = useState('EURUSD');
-  const [anneeCloud, setAnneeCloud] = useState('2024');
+  const [anneeCloud, setAnneeCloud] = useState('2025');
+
+  // Cache des données brutes M1 pour la ré-agrégation MTF à la volée et le scroll infini
+  const [donneesM1Chargees, setDonneesM1Chargees] = useState<Bougie[]>([]);
+  const [anneeMinimumChargee, setAnneeMinimumChargee] = useState<number>(2025);
+  const isFetchingPrevYear = useRef(false);
 
   // Type de journal de destination choisi dans l'en-tête pour l'export des trades
   const [journalDest, setJournalDest] = useState<'global' | 'bias' | 'poi' | 'confirmation'>('global');
@@ -213,31 +208,25 @@ export function BacktestWorkspace() {
     setVitesseLecture,
     fermerPositionManuellement,
     supprimerTradeHistorique,
+    mettreAJourDonneesMtf,
   } = useBacktestStore();
 
   const openNewTradeWithPrefill = useUIStore((s) => s.openNewTradeWithPrefill);
   const addToast = useUIStore((s) => s.addToast);
 
-  // ─── Chargement des données Binance ─────────────────────────────────────────
-  const chargerBinance = useCallback(async () => {
-    setChargement(true);
-    setErreur(null);
-    try {
-      const bougies = await recupererDonneesBinance(symbole, timeframe, limiteBougies);
-      if (!bougies.length) throw new Error('Aucune donnée reçue de Binance.');
-      chargerDonnees(bougies, symbole);
-      addToast(`${symbole} (${timeframe}) — ${bougies.length} bougies chargées`, 'success');
-    } catch (err: any) {
-      setErreur(err.message);
-    } finally {
-      setChargement(false);
-    }
-  }, [symbole, timeframe, limiteBougies]);
-
-  // Chargement automatique au changement d'actif, timeframe ou limite de bougies
+  // Chargement automatique par défaut depuis le Cloud (EURUSD 2025) au premier montage
   useEffect(() => {
-    chargerBinance();
-  }, [chargerBinance]);
+    chargerDonneesCloud('EURUSD', '2025');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ré-agrégation automatique au changement d'unité de temps (UT) pour les données locales/cloud M1
+  useEffect(() => {
+    if (donneesM1Chargees.length === 0) return;
+    console.log(`⏱️ [Re-Aggregation] Changement d'UT vers ${timeframe}. Ré-agrégation des données M1...`);
+    const bougiesAgregees = agregerBougies(donneesM1Chargees, timeframe);
+    mettreAJourDonneesMtf(bougiesAgregees);
+    addToast(`Données ré-agrégées en ${timeframe} — ${bougiesAgregees.length} bougies générées`, 'info');
+  }, [timeframe, donneesM1Chargees, mettreAJourDonneesMtf]);
 
   // ─── Boucle de lecture du Replay ─────────────────────────────────────────────
   useEffect(() => {
@@ -283,17 +272,27 @@ export function BacktestWorkspace() {
     try {
       let texteCsv = '';
       if (fichier.name.endsWith('.gz')) {
-        // Décompresser le fichier GZ local de manière asynchrone
         const stream = fichier.stream().pipeThrough(new DecompressionStream('gzip'));
         const reponse = new Response(stream);
         texteCsv = await reponse.text();
       } else {
         texteCsv = await fichier.text();
       }
-      const bougies = parserCsvPrix(texteCsv);
+      const bougiesM1 = parserCsvPrix(texteCsv);
       const nomActif = fichier.name.replace(/\.csv(\.gz)?$/, '');
-      chargerDonnees(bougies, nomActif);
-      addToast(`${nomActif} — ${bougies.length} bougies importées avec succès !`, 'success');
+
+      // Détecter l'année à partir du nom du fichier si possible, sinon 2025 par défaut
+      const anneeTrouvee = fichier.name.match(/\d{4}/);
+      const anneeStart = anneeTrouvee ? parseInt(anneeTrouvee[0]) : 2025;
+
+      setDonneesM1Chargees(bougiesM1);
+      setAnneeMinimumChargee(anneeStart);
+      setPaireCloud(nomActif.split('_')[0].toUpperCase());
+
+      // Agréger pour le timeframe actif
+      const bougiesAgregees = agregerBougies(bougiesM1, timeframe);
+      chargerDonnees(bougiesAgregees, nomActif);
+      addToast(`${nomActif} — ${bougiesM1.length} bougies M1 importées et agrégées en ${timeframe}`, 'success');
     } catch (err: any) {
       addToast(err.message || 'Erreur lors de la lecture du fichier', 'error');
     } finally {
@@ -308,13 +307,13 @@ export function BacktestWorkspace() {
     setErreur(null);
     try {
       const nomFichier = `${paireSel.toUpperCase()}_M1_${anneeSel}.csv.gz`;
-      const url = `https://cdn.jsdelivr.net/gh/fre-max/Forex_Data@main/${nomFichier}`;
+      const url = `https://cdn.jsdelivr.net/gh/fre-max/Forex_Data@main/forex_data/${nomFichier}`;
       
       console.log(`📡 [Cloud Loader] Téléchargement de ${url}...`);
       const reponse = await fetch(url);
       if (!reponse.ok) {
         throw new Error(
-          `Impossible de trouver le fichier ${nomFichier} sur GitHub. L'actif n'existait peut-être pas en ${anneeSel}.`
+          `Impossible de trouver le fichier ${nomFichier} sur GitHub.`
         );
       }
       
@@ -322,10 +321,17 @@ export function BacktestWorkspace() {
       if (!stream) throw new Error("Impossible d'initialiser le flux de décompression.");
       
       const texteCsv = await new Response(stream).text();
-      const bougies = parserCsvPrix(texteCsv);
+      const bougiesM1 = parserCsvPrix(texteCsv);
       
-      chargerDonnees(bougies, `${paireSel.toUpperCase()} (${anneeSel})`);
-      addToast(`${paireSel.toUpperCase()} (${anneeSel}) — ${bougies.length} bougies chargées depuis le Cloud`, 'success');
+      setDonneesM1Chargees(bougiesM1);
+      const anneeInt = parseInt(anneeSel);
+      setAnneeMinimumChargee(anneeInt);
+      setPaireCloud(paireSel.toUpperCase());
+
+      // Agréger pour le timeframe actif
+      const bougiesAgregees = agregerBougies(bougiesM1, timeframe);
+      chargerDonnees(bougiesAgregees, paireSel.toUpperCase());
+      addToast(`${paireSel.toUpperCase()} (${anneeSel}) — Données chargées et agrégées en ${timeframe}`, 'success');
     } catch (err: any) {
       console.error(err);
       setErreur(err.message || "Erreur lors du chargement des données depuis le Cloud.");
@@ -334,6 +340,50 @@ export function BacktestWorkspace() {
       setChargement(false);
     }
   };
+
+  // ─── Défilement Infini : Chargement automatique de l'année précédente ──────
+  const chargerAnneePrecedenteCloud = useCallback(async () => {
+    if (isFetchingPrevYear.current || anneeMinimumChargee <= 2000 || donneesM1Chargees.length === 0) return;
+    
+    isFetchingPrevYear.current = true;
+    const anneePrecedente = anneeMinimumChargee - 1;
+    const paireActive = paireCloud.toUpperCase();
+    const nomFichier = `${paireActive}_M1_${anneePrecedente}.csv.gz`;
+    const url = `https://cdn.jsdelivr.net/gh/fre-max/Forex_Data@main/forex_data/${nomFichier}`;
+
+    addToast(`☁️ Chargement de l'année ${anneePrecedente} depuis le Cloud...`, 'info');
+    
+    try {
+      const reponse = await fetch(url);
+      if (!reponse.ok) {
+        console.warn(`[Cloud Loader] L'année ${anneePrecedente} n'est pas disponible pour ${paireActive}.`);
+        isFetchingPrevYear.current = false;
+        setAnneeMinimumChargee(anneePrecedente);
+        return;
+      }
+
+      const stream = reponse.body?.pipeThrough(new DecompressionStream('gzip'));
+      if (!stream) throw new Error("Impossible d'initialiser le flux de décompression.");
+
+      const texteCsv = await new Response(stream).text();
+      const anciennesBougiesM1 = parserCsvPrix(texteCsv);
+
+      const nouvellesBougiesM1 = [...anciennesBougiesM1, ...donneesM1Chargees];
+      setDonneesM1Chargees(nouvellesBougiesM1);
+      setAnneeMinimumChargee(anneePrecedente);
+
+      const anciennesBougiesAgregees = agregerBougies(anciennesBougiesM1, timeframe);
+      
+      const injecterDonneesPrecedentes = useBacktestStore.getState().injecterDonneesPrecedentes;
+      injecterDonneesPrecedentes(anciennesBougiesAgregees);
+
+      addToast(`✅ Année ${anneePrecedente} fusionnée avec succès (${anciennesBougiesAgregees.length} nouvelles bougies en ${timeframe})`, 'success');
+    } catch (err: any) {
+      console.error(`[Cloud Loader] Erreur lors du chargement de l'année ${anneePrecedente}:`, err);
+    } finally {
+      isFetchingPrevYear.current = false;
+    }
+  }, [anneeMinimumChargee, paireCloud, donneesM1Chargees, timeframe, addToast]);
 
   // ─── Export d'un trade simulé vers le formulaire du Journal ─────────────────
   // Prend automatiquement une capture d'écran combinée (graphique + overlay)
@@ -383,7 +433,7 @@ export function BacktestWorkspace() {
 
     // Prépare l'objet de pré-remplissage selon le type de journal
     const localPrefill: any = {
-      pair: actif !== 'Aucun actif' && actif ? actif : symbole,
+      pair: actif !== 'Aucun actif' && actif ? actif : paireCloud,
       direction: trade.direction,
       date_backtested: dateTexte,
       result: trade.resultat,
@@ -473,7 +523,7 @@ export function BacktestWorkspace() {
 
     // Initialisation du formulaire pré-rempli avec les champs de base requis
     const localPrefill: any = {
-      pair: actif !== 'Aucun actif' ? actif : symbole,
+      pair: actif !== 'Aucun actif' ? actif : paireCloud,
       date_backtested: new Date().toISOString().split('T')[0],
       journal_type: 'global',
     };
@@ -546,15 +596,6 @@ export function BacktestWorkspace() {
       {/* ══════════════════════════════════════════════════════════ */}
       <div className={`flex items-center gap-2 px-4 h-12 border-b flex-shrink-0 overflow-x-auto whitespace-nowrap scrollbar-none ${C.bgHeader}`}>
 
-        {/* Sélection de l'actif */}
-        <select
-          value={symbole}
-          onChange={(e) => setSymbole(e.target.value)}
-          className={`flex-shrink-0 border-0 rounded px-2 py-1 text-[13px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
-        >
-          {ACTIFS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-        </select>
-
         {/* Boutons Timeframe */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
           {TIMEFRAMES.map((tf) => (
@@ -578,7 +619,7 @@ export function BacktestWorkspace() {
             value={journalDest}
             onChange={(e) => setJournalDest(e.target.value as any)}
             className={`border-0 rounded px-2 py-1 text-[12px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
-            title="Journal de trading de destination pour l'exportation des trades"
+            title="Journal de trading de destination"
           >
             <option value="global">📋 Global</option>
             <option value="bias">🎯 Biais</option>
@@ -586,33 +627,6 @@ export function BacktestWorkspace() {
             <option value="confirmation">⚡ Confirmation</option>
           </select>
         </div>
-
-        {/* Saisie du nombre de bougies à charger */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className={`text-[11px] ${C.textMuted}`}>Bougies :</span>
-          <input
-            type="number"
-            value={limiteBougies}
-            min={10}
-            max={1000}
-            onChange={(e) => {
-              const val = Math.max(10, Math.min(1000, Number(e.target.value)));
-              setLimiteBougies(val);
-            }}
-            className={`border-0 rounded px-2 py-1 text-[12px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] w-16 text-center ${C.select}`}
-            title="Nombre de bougies à charger (10 à 1000)"
-          />
-        </div>
-
-        <button
-          onClick={chargerBinance}
-          disabled={chargement}
-          className="flex-shrink-0 px-3 py-1 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[12px] font-semibold rounded disabled:opacity-50 transition-colors"
-        >
-          {chargement ? '⌛' : 'Charger'}
-        </button>
-
-        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
         {/* Import CSV */}
         <input type="file" accept=".csv" ref={fileInputRef} onChange={gererCsv} className="hidden" />
@@ -856,6 +870,7 @@ export function BacktestWorkspace() {
             ref={chartRef}
             activeTool={outilActif}
             onDrawingComplete={() => setOutilActif(null)}
+            onScrollToLeft={chargerAnneePrecedenteCloud}
             height={hauteurGraphique}
             theme={theme}
             timeframe={timeframe}

@@ -51,58 +51,127 @@ export function parserCsvPrix(contenuTextuel: string): Bougie[] {
 
   // 1️⃣ Découpage par ligne et nettoyage
   const lignes = contenuTextuel.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-  if (lignes.length < 2) {
-    throw new Error("Le fichier CSV doit contenir au moins une ligne d'en-tête et une ligne de données.");
+  if (lignes.length < 1) {
+    throw new Error("Le fichier CSV est vide.");
   }
 
-  // 2️⃣ Détection du séparateur (virgule ou point-virgule)
-  const enteteRaw = lignes[0];
-  const separateur = enteteRaw.includes(';') ? ';' : ',';
-  const colonnesEntete = enteteRaw.split(separateur).map(c => c.trim().toLowerCase());
-  console.log(`📡 [CSV Parser] Séparateur détecté : "${separateur}". En-têtes :`, colonnesEntete);
+  // 2️⃣ Détection du séparateur (virgule, point-virgule ou tabulation)
+  const premiereLigne = lignes[0];
+  const separateur = premiereLigne.includes(';') ? ';' : (premiereLigne.includes('\t') ? '\t' : ',');
+  const colonnesPremiereLigne = premiereLigne.split(separateur).map(c => c.trim().toLowerCase());
+  
+  // Déterminer s'il y a un en-tête dans le fichier
+  const aUnEntete = colonnesPremiereLigne.some(c => 
+    c.includes('date') || c.includes('time') || c.includes('open') || c.includes('close') || c.includes('high')
+  );
 
-  // 3️⃣ Recherche des indices des colonnes requises (insensible à la casse)
-  const indexDate = colonnesEntete.findIndex(c => c.includes('date') || c.includes('time') || c.includes('timestamp') || c.includes('heure'));
-  const indexOpen = colonnesEntete.findIndex(c => c === 'open' || c === 'o' || c === 'ouvert' || c === 'ouverture');
-  const indexHigh = colonnesEntete.findIndex(c => c === 'high' || c === 'h' || c === 'haut' || c === 'maximum');
-  const indexLow = colonnesEntete.findIndex(c => c === 'low' || c === 'l' || c === 'bas' || c === 'minimum');
-  const indexClose = colonnesEntete.findIndex(c => c === 'close' || c === 'c' || c === 'cloture' || c === 'fermeture');
+  let indexDate = -1;
+  let indexHeure = -1;
+  let indexOpen = -1;
+  let indexHigh = -1;
+  let indexLow = -1;
+  let indexClose = -1;
+  let formatSansEntete: 'histdata' | 'metatrader' | 'standard' = 'standard';
+  let ligneDeDepart = 0;
 
+  if (aUnEntete) {
+    console.log(`📡 [CSV Parser] En-tête détecté avec séparateur "${separateur}" :`, colonnesPremiereLigne);
+    indexDate = colonnesPremiereLigne.findIndex(c => c.includes('date') || c.includes('time') || c.includes('timestamp') || c.includes('heure'));
+    indexOpen = colonnesPremiereLigne.findIndex(c => c === 'open' || c === 'o' || c === 'ouvert' || c === 'ouverture');
+    indexHigh = colonnesPremiereLigne.findIndex(c => c === 'high' || c === 'h' || c === 'haut' || c === 'maximum');
+    indexLow = colonnesPremiereLigne.findIndex(c => c === 'low' || c === 'l' || c === 'bas' || c === 'minimum');
+    indexClose = colonnesPremiereLigne.findIndex(c => c === 'close' || c === 'c' || c === 'cloture' || c === 'fermeture');
+    ligneDeDepart = 1;
+  } else {
+    // Fichier sans en-tête : détection automatique selon les premières colonnes
+    console.log(`📡 [CSV Parser] Aucun en-tête détecté. Analyse de la première ligne :`, colonnesPremiereLigne);
+    ligneDeDepart = 0;
+    
+    // Si la colonne 0 est de type date YYYY.MM.DD et la colonne 1 de type heure HH:MM (MetaTrader)
+    const estDateMetaTrader = /^\d{4}[\.\-\/]\d{2}[\.\-\/]\d{2}$/.test(colonnesPremiereLigne[0]);
+    const estHeureMetaTrader = /^\d{2}:\d{2}(:\d{2})?$/.test(colonnesPremiereLigne[1]);
+    
+    if (estDateMetaTrader && estHeureMetaTrader) {
+      console.log("👉 [CSV Parser] Format sans en-tête identifié : MetaTrader (Date;Heure;O;H;L;C)");
+      formatSansEntete = 'metatrader';
+      indexDate = 0;
+      indexHeure = 1;
+      indexOpen = 2;
+      indexHigh = 3;
+      indexLow = 4;
+      indexClose = 5;
+    } else {
+      // Par défaut, format HistData sans en-tête (DateHeure;O;H;L;C;Volume)
+      console.log("👉 [CSV Parser] Format sans en-tête identifié par défaut : HistData (DateHeure;O;H;L;C;Volume)");
+      formatSansEntete = 'histdata';
+      indexDate = 0;
+      indexOpen = 1;
+      indexHigh = 2;
+      indexLow = 3;
+      indexClose = 4;
+    }
+  }
+
+  // Vérifier qu'on a bien mappé toutes les colonnes requises
   if (indexDate === -1 || indexOpen === -1 || indexHigh === -1 || indexLow === -1 || indexClose === -1) {
     throw new Error(
-      "En-tête CSV invalide. Les colonnes requises doivent être identifiables (ex: Date, Open, High, Low, Close)."
+      "En-tête ou structure CSV non reconnue. Les colonnes requises doivent être identifiables."
     );
   }
 
   const resultats: Bougie[] = [];
 
-  // 4️⃣ Parcours des lignes de données
-  for (let i = 1; i < lignes.length; i++) {
+  // 4️⃣ Parcours et parsing des lignes
+  for (let i = ligneDeDepart; i < lignes.length; i++) {
     const valeurs = lignes[i].split(separateur).map(v => v.trim());
-    if (valeurs.length < colonnesEntete.length) continue; // Ligne incomplète
+    if (valeurs.length <= Math.max(indexDate, indexOpen, indexHigh, indexLow, indexClose)) continue;
 
     try {
-      // Analyse de la date ou heure
-      const dateBrute = valeurs[indexDate];
       let dateTimestamp: number | string;
 
-      // Essayer de parser la date
-      const timestampMs = Date.parse(dateBrute);
-      if (isNaN(timestampMs)) {
-        // Si ce n'est pas un format standard ISO, essayer de parser un format simple YYYY-MM-DD
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateBrute)) {
-          dateTimestamp = dateBrute;
+      // Parsing de la date selon le format identifié
+      if (formatSansEntete === 'histdata') {
+        // Format HistData : "YYYYMMDD HHMMSS" (ex: "20180101 170000")
+        const dateBrute = valeurs[indexDate];
+        if (dateBrute.length >= 15) {
+          const annee = dateBrute.substring(0, 4);
+          const mois = dateBrute.substring(4, 6);
+          const jour = dateBrute.substring(6, 8);
+          const heure = dateBrute.substring(9, 11);
+          const minute = dateBrute.substring(11, 13);
+          const seconde = dateBrute.substring(13, 15);
+          
+          const dateISO = `${annee}-${mois}-${jour}T${heure}:${minute}:${seconde}Z`;
+          dateTimestamp = Math.floor(Date.parse(dateISO) / 1000);
         } else {
-          // Si le format n'est pas reconnu, ignorer cette ligne
-          console.warn(`⚠️ [CSV Parser] Ligne ${i + 1} ignorée : Format de date non pris en compte (${dateBrute})`);
           continue;
         }
+      } else if (formatSansEntete === 'metatrader') {
+        // Format MetaTrader : Date ("YYYY.MM.DD") et Heure ("HH:MM")
+        const dateBrute = valeurs[indexDate].replace(/\./g, '-');
+        const heureBrute = valeurs[indexHeure];
+        const dateISO = `${dateBrute}T${heureBrute}:00Z`;
+        dateTimestamp = Math.floor(Date.parse(dateISO) / 1000);
       } else {
-        // Conversion du timestamp millisecondes en secondes pour lightweight-charts
-        dateTimestamp = Math.floor(timestampMs / 1000);
+        // Format standard avec en-tête
+        const dateBrute = valeurs[indexDate];
+        const timestampMs = Date.parse(dateBrute);
+        if (isNaN(timestampMs)) {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateBrute)) {
+            dateTimestamp = dateBrute;
+          } else {
+            continue;
+          }
+        } else {
+          dateTimestamp = Math.floor(timestampMs / 1000);
+        }
       }
 
-      // Analyse des prix (conversion en nombre et gestion de la virgule comme séparateur décimal)
+      if (typeof dateTimestamp === 'number' && isNaN(dateTimestamp)) {
+        continue;
+      }
+
+      // Parsing des prix (gestion des nombres décimaux à virgule française)
       const open = parseFloat(valeurs[indexOpen].replace(',', '.'));
       const high = parseFloat(valeurs[indexHigh].replace(',', '.'));
       const low = parseFloat(valeurs[indexLow].replace(',', '.'));
@@ -120,7 +189,7 @@ export function parserCsvPrix(contenuTextuel: string): Bougie[] {
         close
       });
     } catch (err) {
-      console.warn(`⚠️ [CSV Parser] Erreur lors de l'analyse de la ligne ${i + 1}:`, err);
+      // Ligne corrompue passée sous silence
     }
   }
 
@@ -128,17 +197,14 @@ export function parserCsvPrix(contenuTextuel: string): Bougie[] {
     throw new Error("Aucune ligne de données valide n'a pu être lue du fichier CSV.");
   }
 
-  // 5️⃣ Dédoublonnage et tri chronologique
-  // TradingView Lightweight Charts requiert que les dates soient triées par ordre croissant
-  // et qu'il n'y ait pas de doublons temporels.
-  console.log(`📡 [CSV Parser] Tri chronologique et dédoublonnage de ${resultats.length} bougies...`);
-
+  // Tri chronologique des bougies
   const bougiesTriees = resultats.sort((a, b) => {
     const tempsA = typeof a.time === 'number' ? a.time : Date.parse(a.time);
     const tempsB = typeof b.time === 'number' ? b.time : Date.parse(b.time);
     return tempsA - tempsB;
   });
 
+  // Élimination des bougies doublons (lightweight-charts l'exige)
   const bougiesFinales: Bougie[] = [];
   const setTempsDetectes = new Set<string | number>();
 
@@ -151,4 +217,70 @@ export function parserCsvPrix(contenuTextuel: string): Bougie[] {
 
   console.log(`✅ [CSV Parser] Analyse terminée. ${bougiesFinales.length} bougies prêtes pour le graphique.`);
   return bougiesFinales;
+}
+
+/**
+ * Agrège des bougies M1 en bougies d'une unité de temps supérieure (ex: 5m, 15m, 1h, 1d)
+ */
+export function agregerBougies(bougiesM1: Bougie[], timeframeSuperior: string): Bougie[] {
+  let minutes = 1;
+  switch (timeframeSuperior) {
+    case '1m': minutes = 1; break;
+    case '5m': minutes = 5; break;
+    case '15m': minutes = 15; break;
+    case '30m': minutes = 30; break;
+    case '1h': minutes = 60; break;
+    case '4h': minutes = 240; break;
+    case '1d': minutes = 1440; break;
+    default: return bougiesM1;
+  }
+
+  if (minutes === 1) return bougiesM1;
+
+  console.log(`⏱️ [MTF Aggregator] Agrégation de ${bougiesM1.length} bougies M1 en format ${timeframeSuperior} (${minutes} minutes)...`);
+  const secondesParBucket = minutes * 60;
+  const groupes = new Map<number, Bougie[]>();
+
+  // Regrouper les bougies M1 par intervalle de temps
+  for (const b of bougiesM1) {
+    const timestampSec = typeof b.time === 'number' ? b.time : Math.floor(Date.parse(b.time) / 1000);
+    if (isNaN(timestampSec)) continue;
+
+    // Déterminer le début du bucket de temps supérieur
+    const bucketStart = Math.floor(timestampSec / secondesParBucket) * secondesParBucket;
+
+    if (!groupes.has(bucketStart)) {
+      groupes.set(bucketStart, []);
+    }
+    groupes.get(bucketStart)!.push({
+      ...b,
+      time: timestampSec // Conserver le timestamp réel pour le tri interne
+    });
+  }
+
+  const resultats: Bougie[] = [];
+
+  // Agrégation de chaque bucket
+  for (const [bucketTime, listeM1] of groupes.entries()) {
+    // Trier les M1 dans le bucket pour être sûr de l'ordre chronologique
+    listeM1.sort((a, b) => (a.time as number) - (b.time as number));
+
+    const open = listeM1[0].open;
+    const close = listeM1[listeM1.length - 1].close;
+    const high = Math.max(...listeM1.map(b => b.high));
+    const low = Math.min(...listeM1.map(b => b.low));
+
+    resultats.push({
+      time: bucketTime,
+      open,
+      high,
+      low,
+      close
+    });
+  }
+
+  // Trier le résultat final chronologiquement
+  const finalAggregated = resultats.sort((a, b) => (a.time as number) - (b.time as number));
+  console.log(`✅ [MTF Aggregator] Agrégation terminée. ${finalAggregated.length} bougies ${timeframeSuperior} générées.`);
+  return finalAggregated;
 }

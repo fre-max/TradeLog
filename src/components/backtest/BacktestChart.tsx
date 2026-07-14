@@ -123,6 +123,7 @@ const CONFIG_OUTILS: Record<string, {
 interface BacktestChartProps {
   activeTool: string | null;
   onDrawingComplete?: () => void; // Rappelé une fois le tracé terminé pour repasser au curseur
+  onScrollToLeft?: () => void;     // Notifie lorsque l'utilisateur a défilé vers le passé proche du début
   height: number;
   theme: 'dark' | 'light';
   timeframe: string;
@@ -136,7 +137,7 @@ const THEMES = {
 export const BacktestChart = React.forwardRef<
   { takeScreenshot: () => Promise<Blob | null> },
   BacktestChartProps
->(({ activeTool, onDrawingComplete, height, theme, timeframe }, ref) => {
+>(({ activeTool, onDrawingComplete, onScrollToLeft, height, theme, timeframe }, ref) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -144,6 +145,12 @@ export const BacktestChart = React.forwardRef<
   const indexCourant = useBacktestStore((s) => s.indexCourant);
   const ouvrirPosition = useBacktestStore((s) => s.ouvrirPosition);
   const positionActive = useBacktestStore((s) => s.positionActive);
+
+  // Référence mutable pour éviter le stale closure du scroll handler
+  const scrollRef = useRef(onScrollToLeft);
+  useEffect(() => {
+    scrollRef.current = onScrollToLeft;
+  }, [onScrollToLeft]);
 
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -689,7 +696,17 @@ export const BacktestChart = React.forwardRef<
     const desabonnerDeselection = manager.on('drawing:deselected', () => setIdDessinSelectionne(null));
     const desabonnerSuppression = manager.on('drawing:removed', () => setIdDessinSelectionne(null));
 
-    const gererScale = () => redessinerOverlay();
+    const gererScale = () => {
+      redessinerOverlay();
+      
+      // Détecter si on se rapproche des premières bougies chargées (Logical Index < 30)
+      const range = chart.timeScale().getVisibleLogicalRange();
+      if (range && range.from < 30 && stateRef.current.donneesCompletes.length > 100) {
+        if (scrollRef.current) {
+          scrollRef.current();
+        }
+      }
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(gererScale);
 
     // Routage tactile (glissement des dessins bibliothèque avec le doigt)
