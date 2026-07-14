@@ -174,6 +174,38 @@ export function GlobalInfosPanel({
               />
             </Field>
           </FieldGrid>
+ 
+          {/* Section d'Analyse Temporelle (⏱️ Durées) */}
+          <div className="pt-3 border-t border-border2/60">
+            <span className="text-txt3 text-[10px] font-bold uppercase tracking-wider block mb-2.5">⏱️ Analyse Temporelle (Backtest)</span>
+            <FieldGrid>
+              <Field label="Délai estimé (heures)">
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder="Ex: 4.5"
+                  value={formData.duree_estimee_heures}
+                  onChange={(e) => updateField('duree_estimee_heures', e.target.value)}
+                />
+              </Field>
+              <Field label="Délai estimé (bougies)">
+                <Input
+                  type="number"
+                  placeholder="Ex: 18"
+                  value={formData.duree_estimee_bougies}
+                  onChange={(e) => updateField('duree_estimee_bougies', e.target.value)}
+                />
+              </Field>
+              <Field label="Durée réelle (bougies)">
+                <Input
+                  type="number"
+                  placeholder="Ex: 24"
+                  value={formData.duree_reelle_bougies}
+                  onChange={(e) => updateField('duree_reelle_bougies', e.target.value)}
+                />
+              </Field>
+            </FieldGrid>
+          </div>
 
           {/* Résultat du Trade */}
           <div className="space-y-1.5">

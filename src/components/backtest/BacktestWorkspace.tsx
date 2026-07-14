@@ -107,7 +107,7 @@ export function BacktestWorkspace() {
   const [timeframe, setTimeframe] = useState('1h');
   const [estPleinEcran, setEstPleinEcran] = useState(false);
   // Thème graphique : 'dark' (fond noir TradingView) ou 'light' (fond blanc TradingView)
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   // Nombre de bougies à charger de l'API Binance (100 à 1000)
   const [limiteBougies, setLimiteBougies] = useState(500);
 
@@ -342,6 +342,9 @@ export function BacktestWorkspace() {
       date_backtested: dateTexte,
       result: trade.resultat,
       journal_type: journalDest,
+      duree_estimee_heures: trade.dureeEstimeeHeures !== undefined && trade.dureeEstimeeHeures !== null ? String(trade.dureeEstimeeHeures) : '',
+      duree_estimee_bougies: trade.dureeEstimeeBougies !== undefined && trade.dureeEstimeeBougies !== null ? String(trade.dureeEstimeeBougies) : '',
+      duree_reelle_bougies: trade.dureeReelleBougies !== undefined && trade.dureeReelleBougies !== null ? String(trade.dureeReelleBougies) : '',
     };
 
     // Adapte la configuration de l'export en fonction du journal sélectionné

@@ -45,8 +45,10 @@ export const TradeSchema = z.object({
   emotion: EmotionEnum.optional().nullable(),
   strategy_id: z.string().uuid().optional().nullable(),
   status: StatusEnum.default('in_progress'),
-  // Le type de journal permet de masquer/afficher dynamiquement les étapes du formulaire et de filtrer l'affichage
   journal_type: JournalTypeEnum.default('global'),
+  duree_estimee_heures: z.number().optional().nullable(),
+  duree_estimee_bougies: z.number().int().optional().nullable(),
+  duree_reelle_bougies: z.number().int().optional().nullable(),
   created_at: z.string(),
 })
 

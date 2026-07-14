@@ -21,7 +21,7 @@ export async function recupererDonneesBinance(symbole: string, intervalle: strin
     const url = `https://api.binance.com/api/v3/klines?symbol=${symbole}&interval=${intervalle}&limit=${limite}`;
     const reponse = await fetch(url);
     if (!reponse.ok) throw new Error(`Erreur API Binance: ${reponse.statusText}`);
-    
+
     const rawData = await reponse.json();
     console.log(`✅ [Binance API] ${rawData.length} bougies récupérées.`);
 
@@ -48,7 +48,7 @@ export async function recupererDonneesBinance(symbole: string, intervalle: strin
  */
 export function parserCsvPrix(contenuTextuel: string): Bougie[] {
   console.log('🚀 [CSV Parser] Début de l\'analyse du fichier CSV...');
-  
+
   // 1️⃣ Découpage par ligne et nettoyage
   const lignes = contenuTextuel.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
   if (lignes.length < 2) {
@@ -94,7 +94,7 @@ export function parserCsvPrix(contenuTextuel: string): Bougie[] {
           dateTimestamp = dateBrute;
         } else {
           // Si le format n'est pas reconnu, ignorer cette ligne
-          console.warn(`⚠️ [CSV Parser] Ligne ${i+1} ignorée : Format de date non pris en compte (${dateBrute})`);
+          console.warn(`⚠️ [CSV Parser] Ligne ${i + 1} ignorée : Format de date non pris en compte (${dateBrute})`);
           continue;
         }
       } else {
@@ -120,7 +120,7 @@ export function parserCsvPrix(contenuTextuel: string): Bougie[] {
         close
       });
     } catch (err) {
-      console.warn(`⚠️ [CSV Parser] Erreur lors de l'analyse de la ligne ${i+1}:`, err);
+      console.warn(`⚠️ [CSV Parser] Erreur lors de l'analyse de la ligne ${i + 1}:`, err);
     }
   }
 
@@ -132,7 +132,7 @@ export function parserCsvPrix(contenuTextuel: string): Bougie[] {
   // TradingView Lightweight Charts requiert que les dates soient triées par ordre croissant
   // et qu'il n'y ait pas de doublons temporels.
   console.log(`📡 [CSV Parser] Tri chronologique et dédoublonnage de ${resultats.length} bougies...`);
-  
+
   const bougiesTriees = resultats.sort((a, b) => {
     const tempsA = typeof a.time === 'number' ? a.time : Date.parse(a.time);
     const tempsB = typeof b.time === 'number' ? b.time : Date.parse(b.time);

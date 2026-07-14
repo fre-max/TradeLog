@@ -16,6 +16,9 @@ export const INITIAL_FORM_STATE = {
   strategy_id: '',
   journal_type: 'global' as 'global' | 'bias' | 'poi' | 'confirmation',
   description: '', // Seul champ de description libre global
+  duree_estimee_heures: '',
+  duree_estimee_bougies: '',
+  duree_reelle_bougies: '',
 
   biais_timeframe: 'H4',
   biais_direction: 'Haussier',
@@ -112,6 +115,9 @@ export function tradeToFormData(trade: TradeWithSteps, existingImages: any[] = [
     strategy_id: trade.strategy_id ?? '',
     journal_type: trade.journal_type ?? 'global',
     description: review?.notes ?? str(reviewFields.description),
+    duree_estimee_heures: numStr(trade.duree_estimee_heures),
+    duree_estimee_bougies: numStr(trade.duree_estimee_bougies),
+    duree_reelle_bougies: numStr(trade.duree_reelle_bougies),
 
     biais_timeframe: biais?.timeframe ?? gemini?.timeframe ?? 'H4',
     biais_direction: str(biaisFields.direction) || (gemini?.direction === 'short' ? 'Baissier' : gemini?.direction === 'long' ? 'Haussier' : 'Haussier'),
@@ -294,6 +300,9 @@ export function buildTradePayload(formData: FormDataState, status: TradeWithStep
     emotion: formData.emotion || null,
     strategy_id: formData.strategy_id || null,
     journal_type: formData.journal_type,
+    duree_estimee_heures: formData.duree_estimee_heures ? parseFloat(formData.duree_estimee_heures) : null,
+    duree_estimee_bougies: formData.duree_estimee_bougies ? parseInt(formData.duree_estimee_bougies, 10) : null,
+    duree_reelle_bougies: formData.duree_reelle_bougies ? parseInt(formData.duree_reelle_bougies, 10) : null,
     status,
   }
 }

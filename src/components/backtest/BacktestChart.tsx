@@ -372,7 +372,7 @@ export const BacktestChart = React.forwardRef<
     const bougieEntree = data[pos.indexEntree];
     if (!bougieEntree) return;
 
-    const xStart = chart.timeScale().timeToCoordinate(bougieEntree.time as Time);
+    const xStart = chart.timeScale().logicalToCoordinate(pos.indexEntree as any);
     const yEntry = series.priceToCoordinate(pos.prixEntree);
     const ySL = series.priceToCoordinate(pos.prixSL);
     const yTP = series.priceToCoordinate(pos.prixTP);
@@ -383,8 +383,8 @@ export const BacktestChart = React.forwardRef<
     let largeurBougie = 6;
     const currentIndex = stateRef.current.indexCourant;
     if (currentIndex > 0) {
-      const xCur = chart.timeScale().timeToCoordinate(data[currentIndex].time as Time);
-      const xPrev = chart.timeScale().timeToCoordinate(data[currentIndex - 1].time as Time);
+      const xCur = chart.timeScale().logicalToCoordinate(currentIndex as any);
+      const xPrev = chart.timeScale().logicalToCoordinate((currentIndex - 1) as any);
       if (xCur !== null && xPrev !== null) {
         largeurBougie = Math.abs(xCur - xPrev);
       }
@@ -571,7 +571,7 @@ export const BacktestChart = React.forwardRef<
     const bougieEntree = data[pos.indexEntree];
     if (!bougieEntree) return null;
 
-    const xStart = chart.timeScale().timeToCoordinate(bougieEntree.time as Time);
+    const xStart = chart.timeScale().logicalToCoordinate(pos.indexEntree as any);
     const yEntry = series.priceToCoordinate(pos.prixEntree);
     const ySL = series.priceToCoordinate(pos.prixSL);
     const yTP = series.priceToCoordinate(pos.prixTP);
@@ -581,8 +581,8 @@ export const BacktestChart = React.forwardRef<
     let largeurBougie = 6;
     const currentIndex = stateRef.current.indexCourant;
     if (currentIndex > 0) {
-      const xCur = chart.timeScale().timeToCoordinate(data[currentIndex].time as Time);
-      const xPrev = chart.timeScale().timeToCoordinate(data[currentIndex - 1].time as Time);
+      const xCur = chart.timeScale().logicalToCoordinate(currentIndex as any);
+      const xPrev = chart.timeScale().logicalToCoordinate((currentIndex - 1) as any);
       if (xCur !== null && xPrev !== null) {
         largeurBougie = Math.abs(xCur - xPrev);
       }
@@ -630,7 +630,7 @@ export const BacktestChart = React.forwardRef<
 
       // Vérifier si on clique proche d'une des lignes horizontales
       if (py >= yMin && py <= yMax) {
-        const xStart = chart.timeScale().timeToCoordinate(bougieEntree.time as Time);
+        const xStart = chart.timeScale().logicalToCoordinate(pos.indexEntree as any);
         if (xStart !== null && px >= xStart - 5) {
           return pos.id;
         }
@@ -660,7 +660,7 @@ export const BacktestChart = React.forwardRef<
         horzLines: { color: couleurs.grid },
       },
       crosshair: {
-        mode: 1,
+        mode: 0, // 0 = CrosshairMode.Normal (le réticule suit le curseur de manière fluide)
         vertLine: { labelBackgroundColor: couleurs.background },
         horzLine: { labelBackgroundColor: couleurs.background },
       },

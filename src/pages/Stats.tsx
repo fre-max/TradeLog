@@ -108,6 +108,49 @@ export default function Stats() {
     return trie[0]
   }, [parEmotion])
 
+  const insightTemporel = useMemo(() => {
+    const tradesAvecDuree = trades.filter(
+      (t) => t.duree_estimee_bougies != null && t.duree_reelle_bougies != null
+    )
+    if (tradesAvecDuree.length === 0) return null
+
+    let totalEstimeeHeures = 0
+    let countEstimeeHeures = 0
+    let totalEstimeeBougies = 0
+    let totalReelleBougies = 0
+    let totalEcartBougies = 0
+    
+    trades.forEach((t) => {
+      if (t.duree_estimee_heures != null) {
+        totalEstimeeHeures += Number(t.duree_estimee_heures)
+        countEstimeeHeures++
+      }
+      if (t.duree_estimee_bougies != null && t.duree_reelle_bougies != null) {
+        totalEstimeeBougies += Number(t.duree_estimee_bougies)
+        totalReelleBougies += Number(t.duree_reelle_bougies)
+        totalEcartBougies += Math.abs(Number(t.duree_estimee_bougies) - Number(t.duree_reelle_bougies))
+      }
+    })
+
+    const moyEstimeeHeures = countEstimeeHeures > 0 ? parseFloat((totalEstimeeHeures / countEstimeeHeures).toFixed(1)) : 0
+    const moyEstimeeBougies = tradesAvecDuree.length > 0 ? Math.round(totalEstimeeBougies / tradesAvecDuree.length) : 0
+    const moyReelleBougies = tradesAvecDuree.length > 0 ? Math.round(totalReelleBougies / tradesAvecDuree.length) : 0
+    const moyEcartBougies = tradesAvecDuree.length > 0 ? parseFloat((totalEcartBougies / tradesAvecDuree.length).toFixed(1)) : 0
+    
+    const precision = totalEstimeeBougies > 0 
+      ? Math.max(0, Math.round((1 - (totalEcartBougies / totalEstimeeBougies)) * 100))
+      : 0
+
+    return {
+      moyEstimeeHeures,
+      moyEstimeeBougies,
+      moyReelleBougies,
+      moyEcartBougies,
+      precision,
+      totalTradesDuree: tradesAvecDuree.length
+    }
+  }, [trades])
+
   // ─── Calcul de l'Efficience des Raisons du Catalogue ────────────────
   const calculerEfficienceRaisons = () => {
     const statsMap = new Map<string, {
@@ -702,6 +745,22 @@ export default function Stats() {
                           )
                         ) : (
                           "Pas assez d'états émotionnels enregistrés."
+                        )
+                      }
+                    />
+
+                    {/* 6. Analyse Temporelle (⏱️) */}
+                    <InsightCard
+                      title="Quelle est ma précision d'estimation de temps ?"
+                      icon="⏱️"
+                      badge={insightTemporel ? `${insightTemporel.precision}% de précision` : undefined}
+                      description={
+                        insightTemporel ? (
+                          <span>
+                            Tes trades durent en moyenne <strong>{insightTemporel.moyReelleBougies} bougies</strong>, contre une estimation initiale moyenne de <strong>{insightTemporel.moyEstimeeHeures}h ({insightTemporel.moyEstimeeBougies} bougies)</strong>. L'écart temporel moyen est de <strong>{insightTemporel.moyEcartBougies} bougies</strong>.
+                          </span>
+                        ) : (
+                          "Pas assez de données d'analyses temporelles enregistrées (place des trades avec SL/TP et durée estimée sur le graphique de backtest)."
                         )
                       }
                     />

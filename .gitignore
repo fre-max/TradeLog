@@ -36,3 +36,7 @@ tsconfig.tsbuildinfo
 .dev.vars*
 !.dev.vars.example
 !.env.example
+
+# Données historiques de backtest
+forex_data/
+forex_data_temp/
