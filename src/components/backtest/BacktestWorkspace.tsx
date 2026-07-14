@@ -111,6 +111,10 @@ export function BacktestWorkspace() {
   // Nombre de bougies à charger de l'API Binance (100 à 1000)
   const [limiteBougies, setLimiteBougies] = useState(500);
 
+  // Actifs et Années pour la banque de données Cloud personnelle (GitHub)
+  const [paireCloud, setPaireCloud] = useState('EURUSD');
+  const [anneeCloud, setAnneeCloud] = useState('2024');
+
   // Type de journal de destination choisi dans l'en-tête pour l'export des trades
   const [journalDest, setJournalDest] = useState<'global' | 'bias' | 'poi' | 'confirmation'>('global');
 
@@ -271,22 +275,64 @@ export function BacktestWorkspace() {
     return () => window.removeEventListener('keydown', gererTouche);
   }, [estEnLecture, avancerBougie, setEstEnLecture]);
 
-  // ─── Importation CSV ─────────────────────────────────────────────────────────
-  const gererCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ─── Importation CSV (Supporte .csv et .csv.gz via DecompressionStream) ──────
+  const gererCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fichier = e.target.files?.[0];
     if (!fichier) return;
-    const lecteur = new FileReader();
-    lecteur.onload = (ev) => {
-      try {
-        const bougies = parserCsvPrix(ev.target?.result as string);
-        chargerDonnees(bougies, fichier.name.replace(/\.[^.]+$/, ''));
-        addToast(`CSV importé — ${bougies.length} bougies prêtes`, 'success');
-      } catch (err: any) {
-        addToast(err.message || 'Erreur lors de la lecture du CSV', 'error');
+    setChargement(true);
+    try {
+      let texteCsv = '';
+      if (fichier.name.endsWith('.gz')) {
+        // Décompresser le fichier GZ local de manière asynchrone
+        const stream = fichier.stream().pipeThrough(new DecompressionStream('gzip'));
+        const reponse = new Response(stream);
+        texteCsv = await reponse.text();
+      } else {
+        texteCsv = await fichier.text();
       }
-    };
-    lecteur.readAsText(fichier);
-    e.target.value = '';
+      const bougies = parserCsvPrix(texteCsv);
+      const nomActif = fichier.name.replace(/\.csv(\.gz)?$/, '');
+      chargerDonnees(bougies, nomActif);
+      addToast(`${nomActif} — ${bougies.length} bougies importées avec succès !`, 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Erreur lors de la lecture du fichier', 'error');
+    } finally {
+      setChargement(false);
+      e.target.value = '';
+    }
+  };
+
+  // ─── Chargement Cloud depuis le Dépôt GitHub public ────────────────────────
+  const chargerDonneesCloud = async (paireSel: string, anneeSel: string) => {
+    setChargement(true);
+    setErreur(null);
+    try {
+      const nomFichier = `${paireSel.toUpperCase()}_M1_${anneeSel}.csv.gz`;
+      const url = `https://cdn.jsdelivr.net/gh/fre-max/Forex_Data@main/${nomFichier}`;
+      
+      console.log(`📡 [Cloud Loader] Téléchargement de ${url}...`);
+      const reponse = await fetch(url);
+      if (!reponse.ok) {
+        throw new Error(
+          `Impossible de trouver le fichier ${nomFichier} sur GitHub. L'actif n'existait peut-être pas en ${anneeSel}.`
+        );
+      }
+      
+      const stream = reponse.body?.pipeThrough(new DecompressionStream('gzip'));
+      if (!stream) throw new Error("Impossible d'initialiser le flux de décompression.");
+      
+      const texteCsv = await new Response(stream).text();
+      const bougies = parserCsvPrix(texteCsv);
+      
+      chargerDonnees(bougies, `${paireSel.toUpperCase()} (${anneeSel})`);
+      addToast(`${paireSel.toUpperCase()} (${anneeSel}) — ${bougies.length} bougies chargées depuis le Cloud`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      setErreur(err.message || "Erreur lors du chargement des données depuis le Cloud.");
+      addToast(err.message || "Échec du chargement Cloud", "error");
+    } finally {
+      setChargement(false);
+    }
   };
 
   // ─── Export d'un trade simulé vers le formulaire du Journal ─────────────────
@@ -576,7 +622,43 @@ export function BacktestWorkspace() {
         >
           📁 CSV
         </button>
-
+ 
+        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
+ 
+        {/* Import Cloud (GitHub CDN) */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <select
+            value={paireCloud}
+            onChange={(e) => setPaireCloud(e.target.value)}
+            className={`border-0 rounded px-1.5 py-1 text-[12px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
+            title="Sélectionner l'actif Forex à charger depuis le Cloud"
+          >
+            {['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD', 'GBPJPY', 'EURJPY', 'EURGBP', 'AUDJPY', 'GBPAUD', 'EURAUD', 'EURCAD', 'AUDNZD', 'CADJPY', 'CHFJPY'].map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+ 
+          <select
+            value={anneeCloud}
+            onChange={(e) => setAnneeCloud(e.target.value)}
+            className={`border-0 rounded px-1.5 py-1 text-[12px] font-semibold outline-none focus:ring-1 focus:ring-[#2962ff] cursor-pointer ${C.select}`}
+            title="Sélectionner l'année de l'historique M1"
+          >
+            {Array.from({ length: 26 }, (_, i) => String(2025 - i)).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+ 
+          <button
+            onClick={() => chargerDonneesCloud(paireCloud, anneeCloud)}
+            disabled={chargement}
+            className={`flex-shrink-0 px-2.5 py-1 text-[12px] font-semibold rounded disabled:opacity-50 transition-colors flex items-center gap-1.5 ${C.btnBase}`}
+            title="Charger l'historique M1 depuis ton dépôt GitHub public"
+          >
+            {chargement ? '⌛' : '☁️ Cloud'}
+          </button>
+        </div>
+ 
         <div className="hidden md:block flex-1" />
 
         {/* Infos bougie courante */}
