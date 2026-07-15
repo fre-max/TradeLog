@@ -5,6 +5,9 @@ import { SkeletonSection, SkeletonLine } from '@/components/ui/Skeleton'
 import { QuickEntryBanner } from '@/components/trade/QuickEntryBanner'
 import type { GeminiAnalysis } from '@/hooks/useQuickEntry'
 import { exportPdf } from '@/lib/exportPdf'
+import { useNavigate } from 'react-router-dom'
+import { useBacktestStore } from '@/store/backtestStore'
+
 
 // ─── TradeDetail ──────────────────────────────────────────
 // Panneau latéral qui affiche le détail complet d'un trade
@@ -19,6 +22,9 @@ export function TradeDetail() {
   const [lightbox, setLightbox] = useState<string | null>(null)
   // État de génération du PDF (affiche un spinner pendant le téléchargement des images)
   const [generationPdf, setGenerationPdf] = useState(false)
+  const navigate = useNavigate()
+  const lancerRestaurationContexte = useBacktestStore((s) => s.lancerRestaurationContexte)
+
 
   console.log('🔍 [TradeDetail] Rendu, isDetailOpen =', isDetailOpen, 'selectedTradeId =', selectedTrade?.id)
 
@@ -110,12 +116,27 @@ export function TradeDetail() {
                 }
                 <span className="hidden sm:inline">PDF</span>
               </button>
+              {selectedTrade.backtest_context && (
+                <button
+                  onClick={() => {
+                    console.log('🔄 [TradeDetail] Lancement de la restauration de backtest :', selectedTrade.backtest_context)
+                    lancerRestaurationContexte(selectedTrade.backtest_context)
+                    closeDetail()
+                    navigate('/backtest')
+                  }}
+                  title="Revenir au moment exact où ce backtest a été pris"
+                  className="px-2.5 py-1.5 bg-accent/25 border border-accent/40 text-accent rounded-md text-[12px] font-semibold hover:bg-accent/40 hover:text-white transition-all flex items-center gap-1"
+                >
+                  🔄 <span className="hidden sm:inline">Rejouer</span>
+                </button>
+              )}
               <button
                 onClick={() => openEditTrade(selectedTrade)}
                 className="px-2.5 py-1.5 bg-accent text-white rounded-md text-[12px] font-medium hover:bg-accent/90 transition-colors"
               >
                 Modifier
               </button>
+
               {/* Bouton fermer — uniquement sur desktop */}
               <button
                 onClick={closeDetail}

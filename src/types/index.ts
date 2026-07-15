@@ -49,6 +49,7 @@ export const TradeSchema = z.object({
   duree_estimee_heures: z.number().optional().nullable(),
   duree_estimee_bougies: z.number().int().optional().nullable(),
   duree_reelle_bougies: z.number().int().optional().nullable(),
+  backtest_context: z.any().optional().nullable(),
   created_at: z.string(),
 })
 

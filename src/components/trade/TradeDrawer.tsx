@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useUIStore } from '@/store'
+import { useBacktestStore } from '@/store/backtestStore'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { useUpdateTrade } from '@/hooks/useTrades'
@@ -25,7 +26,17 @@ import {
 
 export type { FormDataState }
 
-export function TradeDrawer() {
+export function TradeDrawer({
+  isInline = false,
+  backtestMode = false,
+  onCaptureGraphique,
+}: {
+  isInline?: boolean
+  backtestMode?: boolean
+  // Fonction de capture manuelle du graphique (disponible uniquement en mode backtest)
+  // Exemple : onCaptureGraphique('avant') → retourne l'objet image {id, url, source, phase}
+  onCaptureGraphique?: (phase: 'avant' | 'apres') => Promise<{ id: string; url: string; source: 'upload'; phase: 'avant' | 'apres' } | null>
+}) {
   const isNewTradeOpen = useUIStore((state) => state.isNewTradeOpen)
   const editingTrade = useUIStore((state) => state.editingTrade)
   const prefillData = useUIStore((state) => state.prefillData)
@@ -33,6 +44,12 @@ export function TradeDrawer() {
   const openDetail = useUIStore((state) => state.openDetail)
   const openEditTrade = useUIStore((state) => state.openEditTrade)
   const addToast = useUIStore((state) => state.addToast)
+
+  // Backtest store hooks
+  const positionActive = useBacktestStore((s) => s.positionActive)
+  const modifierPositionActive = useBacktestStore((s) => s.modifierPositionActive)
+  const archiverPositionActive = useBacktestStore((s) => s.archiverPositionActive)
+  const annulerPositionActive = useBacktestStore((s) => s.annulerPositionActive)
 
   const isEditMode = Boolean(editingTrade)
   const { mutateAsync: updateTrade, isPending: isUpdating } = useUpdateTrade()
@@ -110,23 +127,96 @@ export function TradeDrawer() {
       }
       setStepIds({})
       setSelectedReasons([])
-      setTempIds({
-        tradeId: crypto.randomUUID(),
-        biais: crypto.randomUUID(),
-        poi: crypto.randomUUID(),
-        entry: crypto.randomUUID(),
-        result: crypto.randomUUID(),
-      })
+      if (backtestMode && positionActive?.tradeIdSupabase && positionActive.stepIdsSupabase) {
+        setTempIds({
+          tradeId: positionActive.tradeIdSupabase as any,
+          biais: positionActive.stepIdsSupabase.biais as any,
+          poi: positionActive.stepIdsSupabase.poi as any,
+          entry: positionActive.stepIdsSupabase.entry as any,
+          result: positionActive.stepIdsSupabase.result as any,
+        })
+      } else {
+        setTempIds({
+          tradeId: crypto.randomUUID(),
+          biais: crypto.randomUUID(),
+          poi: crypto.randomUUID(),
+          entry: crypto.randomUUID(),
+          result: crypto.randomUUID(),
+        })
+      }
     }
-  }, [isNewTradeOpen, editingTrade, prefillData])
+  }, [isNewTradeOpen, editingTrade, prefillData, backtestMode, positionActive])
 
+  // Synchronise les informations calculées de la position active du Backtest vers le formulaire
+  useEffect(() => {
+    if (backtestMode && positionActive) {
+      setFormData((prev) => {
+        const resultMapping = positionActive.resultat === 'win' ? 'win' as const
+          : positionActive.resultat === 'loss' ? 'loss' as const
+          : positionActive.resultat === 'breakeven' ? 'breakeven' as const
+          : 'missed' as const;
+
+        const plannedDiff = Math.abs(positionActive.takeProfit - positionActive.prixEntree);
+        const plannedRisk = Math.abs(positionActive.prixEntree - positionActive.stopLoss);
+        const rrP = plannedRisk > 0 ? (plannedDiff / plannedRisk).toFixed(1) : '';
+
+        const realizedDiff = Math.abs((positionActive.prixSortie || 0) - positionActive.prixEntree);
+        const realizedRisk = Math.abs(positionActive.prixEntree - positionActive.stopLoss);
+        const rrR = positionActive.estCloturee && realizedRisk > 0 ? (realizedDiff / realizedRisk).toFixed(1) : '';
+
+        return {
+          ...prev,
+          entry_price: positionActive.prixEntree.toFixed(5),
+          entry_sl: positionActive.stopLoss.toFixed(5),
+          entry_tp: positionActive.takeProfit.toFixed(5),
+          rr_planned: rrP,
+          rr_realized: rrR || prev.rr_realized,
+          result: resultMapping,
+        };
+      });
+    }
+  }, [backtestMode, positionActive])
+
+  // Fermeture via le bouton ✕ ou ← (peut annuler la position si nécessaire)
   const handleClose = () => {
     if (!saving && !isUpdating && !isCreatingQuick && !analysantIA) {
+      if (backtestMode) {
+        if (!positionActive?.planificationEnregistree) {
+          // Étape 1 non sauvée → annuler complètement la position du graphique
+          annulerPositionActive()
+        } else if (positionActive?.estCloturee) {
+          // Étape 2 abandonnée → archiver sans sauver la résolution
+          archiverPositionActive()
+        }
+        // Si planifié mais pas encore clôturé → juste fermer, la position reste sur le graphique
+      }
       closeNewTrade()
     }
   }
 
+  // Annulation explicite via le bouton "Annuler" (même comportement que handleClose)
   const resetAndClose = () => {
+    setFormData(INITIAL_FORM_STATE)
+    setStepIds({})
+    setSelectedReasons([])
+    setSelectedStartType(null)
+    setManualMode(false)
+    if (backtestMode) {
+      if (!positionActive?.planificationEnregistree) {
+        // Étape 1 non sauvée → annuler la position du graphique
+        annulerPositionActive()
+      } else if (positionActive?.estCloturee) {
+        // Étape 2 abandonnée → archiver sans sauver la résolution
+        archiverPositionActive()
+      }
+      // Si planifié mais pas clôturé → juste fermer, le replay peut continuer
+    }
+    closeNewTrade()
+  }
+
+  // Fermeture après un enregistrement réussi : ne touche PAS à la position de backtest
+  // car handleSave l'a déjà gérée (modifierPositionActive ou archiverPositionActive)
+  const fermerApresEnregistrement = () => {
     setFormData(INITIAL_FORM_STATE)
     setStepIds({})
     setSelectedReasons([])
@@ -194,6 +284,8 @@ export function TradeDrawer() {
       const tradeIdActuel = isEditMode && editingTrade ? editingTrade.id : tempIds.tradeId
 
       // 1️⃣ Sauvegarde ou création du Trade
+      const estDejaEnregistreEnBacktest = backtestMode && positionActive?.planificationEnregistree
+
       if (isEditMode && editingTrade) {
         const biaisStep = editingTrade.steps.find((s) => s.type === 'biais')
         const preserveBiaisFields = (biaisStep?.fields ?? null) as Record<string, unknown> | null
@@ -205,8 +297,35 @@ export function TradeDrawer() {
           previousStatus: editingTrade.status,
           preserveBiaisFields,
         })
+      } else if (estDejaEnregistreEnBacktest && positionActive?.tradeIdSupabase) {
+        // Mode Backtest - Étape 2 (Mise à jour / Résolution)
+        const status = computeTradeStatus(formData, positionActive.estCloturee ? 'complete' : 'in_progress')
+        const tradePayload = buildTradePayload(formData, status)
+
+        console.log('📡 [TradeDrawer] Mise à jour du trade de backtest :', positionActive.tradeIdSupabase)
+        const { error: tradeUpdateError } = await supabase
+          .from('trades')
+          .update(tradePayload)
+          .eq('id', positionActive.tradeIdSupabase)
+
+        if (tradeUpdateError) throw tradeUpdateError
+
+        const stepsToUpdate = buildStepPayloads(positionActive.tradeIdSupabase, formData, {
+          biais: tempIds.biais,
+          poi: tempIds.poi,
+          entry: tempIds.entry,
+          result: tempIds.result,
+        })
+
+        console.log('📡 [TradeDrawer] Upsert des étapes du trade de backtest')
+        const { error: stepsUpsertError } = await supabase
+          .from('steps')
+          .upsert(stepsToUpdate)
+
+        if (stepsUpsertError) throw stepsUpsertError
       } else {
-        const status = computeTradeStatus(formData, 'in_progress')
+        // Mode normal ou Backtest Étape 1 (Insertion initiale)
+        const status = computeTradeStatus(formData, backtestMode ? 'in_progress' : 'in_progress')
         const tradeData = {
           id: tempIds.tradeId,
           user_id: user.id,
@@ -271,9 +390,17 @@ export function TradeDrawer() {
       ]
       await saveTradeImages({ tradeId: tradeIdActuel, images: imagesPourSauvegarde })
 
+      // 4️⃣ Toast et invalidation du cache
       await queryClient.invalidateQueries({ queryKey: ['trades'] })
-      addToast(isEditMode ? 'Trade mis à jour avec succès !' : 'Le trade a été enregistré avec succès !', 'success')
-      
+      addToast(
+        isEditMode
+          ? 'Trade mis à jour avec succès !'
+          : backtestMode && !positionActive?.estCloturee
+            ? 'Planification du trade enregistrée avec succès !'
+            : 'Le trade a été enregistré avec succès !',
+        'success'
+      )
+
       if (isEditMode && editingTrade) {
         // Recharge le trade complet et réouvre le détail
         const { data: updatedTrade } = await supabase
@@ -284,7 +411,30 @@ export function TradeDrawer() {
         if (updatedTrade) openDetail(updatedTrade as any)
       }
 
-      resetAndClose()
+      // 5️⃣ On ferme d'abord le drawer AVANT de modifier le store
+      // Cela évite que le useEffect de réinitialisation des tempIds (qui écoute positionActive)
+      // se relance alors que isNewTradeOpen est encore true, ce qui générerait de nouveaux IDs aléatoires.
+      fermerApresEnregistrement()
+
+      // 6️⃣ Synchronisation avec le store de backtesting (APRÈS la fermeture du drawer)
+      if (backtestMode) {
+        if (positionActive?.estCloturee) {
+          // Étape 2 résolue : archiver la position dans l'historique de session
+          archiverPositionActive()
+        } else {
+          // Étape 1 planifiée : mémoriser les IDs Supabase pour l'Étape 2
+          modifierPositionActive({
+            tradeIdSupabase: tempIds.tradeId,
+            stepIdsSupabase: {
+              biais: tempIds.biais,
+              poi: tempIds.poi,
+              entry: tempIds.entry,
+              result: tempIds.result,
+            },
+            planificationEnregistree: true,
+          })
+        }
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Erreur lors de la sauvegarde'
       addToast(message, 'error')
@@ -297,15 +447,16 @@ export function TradeDrawer() {
 
   return (
     <>
-      {isNewTradeOpen && (
+      {isNewTradeOpen && !isInline && (
         <div className="fixed inset-0 bg-black/70 z-[90]" onClick={handleClose} />
       )}
 
       <aside
         className={cn(
-          'fixed top-0 right-0 h-full w-full md:w-[680px] bg-surface border-l border-border',
-          'flex flex-col z-[100] transition-transform duration-300',
-          isNewTradeOpen ? 'translate-x-0' : 'translate-x-full'
+          isInline
+            ? 'relative w-full h-full bg-surface'
+            : 'fixed top-0 right-0 h-full w-full md:w-[680px] bg-surface border-l border-border z-[100] transition-transform duration-300 ' + (isNewTradeOpen ? 'translate-x-0' : 'translate-x-full'),
+          'flex flex-col'
         )}
       >
         {/* En-tête */}
@@ -318,19 +469,47 @@ export function TradeDrawer() {
             ←
           </button>
           <div className="flex-1 min-w-0">
-            <h2 className="text-txt font-semibold text-base tracking-tight">
-              {isEditMode ? 'Modifier le trade' : 'Nouveau trade'}
-            </h2>
-            {isEditMode && editingTrade && (
-              <p className="text-txt3 text-[12px] truncate">
-                {editingTrade.pair} · {editingTrade.direction.toUpperCase()} · {editingTrade.date_backtested}
-              </p>
+            {backtestMode && positionActive ? (
+              // En mode backtest : afficher le contexte de la position
+              <>
+                <h2 className="text-txt font-semibold text-sm tracking-tight">
+                  {positionActive.estCloturee ? '🏁 Résolution du Trade' : '📋 Planification du Trade'}
+                </h2>
+                <p className="text-txt3 text-[11px] font-mono">
+                  <span className={positionActive.direction === 'long' ? 'text-[#26a69a]' : 'text-[#ef5350]'}>
+                    {positionActive.direction === 'long' ? '▲ LONG' : '▼ SHORT'}
+                  </span>
+                  {' · '}
+                  <span>E: {positionActive.prixEntree.toFixed(5)}</span>
+                  {' · '}
+                  <span className="text-red-400">SL: {positionActive.stopLoss.toFixed(5)}</span>
+                  {' · '}
+                  <span className="text-emerald-400">TP: {positionActive.takeProfit.toFixed(5)}</span>
+                  {positionActive.estCloturee && positionActive.pnl !== undefined && (
+                    <span className={`ml-2 font-bold ${positionActive.pnl >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+                      {positionActive.pnl >= 0 ? '+' : ''}{positionActive.pnl.toFixed(2)}%
+                    </span>
+                  )}
+                </p>
+              </>
+            ) : (
+              // Mode journal normal
+              <>
+                <h2 className="text-txt font-semibold text-base tracking-tight">
+                  {isEditMode ? 'Modifier le trade' : 'Nouveau trade'}
+                </h2>
+                {isEditMode && editingTrade && (
+                  <p className="text-txt3 text-[12px] truncate">
+                    {editingTrade.pair} · {editingTrade.direction.toUpperCase()} · {editingTrade.date_backtested}
+                  </p>
+                )}
+              </>
             )}
           </div>
           <button
             onClick={handleClose}
             disabled={enCours}
-            className="hidden md:block text-txt3 hover:text-txt text-xl leading-none disabled:opacity-50"
+            className="text-txt3 hover:text-txt text-xl leading-none disabled:opacity-50"
           >
             ✕
           </button>
@@ -364,20 +543,22 @@ export function TradeDrawer() {
           {manualMode && selectedStartType && (
             <div className="space-y-4">
               
-              {/* Garde-fou visuel (Bannière d'avertissement) */}
-              {globalInfosParDefaut && (
+              {/* Garde-fou visuel (Bannière d'avertissement) - Masqué en mode backtest */}
+              {!backtestMode && globalInfosParDefaut && (
                 <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-500 text-xs flex items-center gap-2">
                   <span>⚠️</span>
                   <span>Les informations globales du trade (Paire, Session, R:R...) semblent être par défaut. Pense à les modifier ou utilise l'assistant IA ci-dessous.</span>
                 </div>
               )}
 
-              {/* 1. Informations Globales (Masqué par défaut) */}
-              <GlobalInfosPanel
-                formData={formData}
-                setFormData={setFormData}
-                onDefaultStatusChange={(isDef) => setGlobalInfosParDefaut(isDef)}
-              />
+              {/* 1. Informations Globales (Masqué par défaut) - Masqué en mode backtest */}
+              {!backtestMode && (
+                <GlobalInfosPanel
+                  formData={formData}
+                  setFormData={setFormData}
+                  onDefaultStatusChange={(isDef) => setGlobalInfosParDefaut(isDef)}
+                />
+              )}
 
               {/* 2. Les 3 Panels de section (Biais, POI, Entrée) */}
               <TradeSectionPanel
@@ -391,6 +572,8 @@ export function TradeDrawer() {
                 stepId={isEditMode && stepIds.biais ? stepIds.biais : tempIds.biais}
                 selectedReasons={selectedReasons}
                 setSelectedReasons={setSelectedReasons}
+                masquerApres={backtestMode && !positionActive?.estCloturee}
+                onCaptureGraphique={onCaptureGraphique}
               />
 
               <TradeSectionPanel
@@ -404,6 +587,8 @@ export function TradeDrawer() {
                 stepId={isEditMode && stepIds.poi ? stepIds.poi : tempIds.poi}
                 selectedReasons={selectedReasons}
                 setSelectedReasons={setSelectedReasons}
+                masquerApres={backtestMode && !positionActive?.estCloturee}
+                onCaptureGraphique={onCaptureGraphique}
               />
 
               <TradeSectionPanel
@@ -417,14 +602,51 @@ export function TradeDrawer() {
                 stepId={isEditMode && stepIds.entry ? stepIds.entry : tempIds.entry}
                 selectedReasons={selectedReasons}
                 setSelectedReasons={setSelectedReasons}
+                masquerApres={backtestMode && !positionActive?.estCloturee}
+                onCaptureGraphique={onCaptureGraphique}
               />
 
-              {/* 3. Assistant IA (Remplissage rapide si des images existent) */}
-              <IAAnalysisPanel
-                images={toutesLesImages}
-                analysantIA={analysantIA}
-                onAnalyze={analyserImageSelectionnee}
-              />
+              {/* 3. Section de Résolution (Bilan final - visible uniquement en mode backtest et quand la position est clôturée) */}
+              {backtestMode && positionActive?.estCloturee && (
+                <div className="border border-border2 rounded-xl overflow-hidden bg-surface mb-3 transition-all p-5 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-border/40 pb-2">
+                    <span className="text-blue-500 text-xs">🏁</span>
+                    <h3 className="text-xs font-bold text-txt uppercase tracking-wider">Résolution & Bilan du Trade (Après)</h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-2 rounded bg-surface2 border border-border2">
+                      <span className="text-txt3 block mb-0.5 uppercase text-[9px]">P&L réalisé</span>
+                      <span className={`font-mono font-bold text-[13px] ${(positionActive.pnl || 0) >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+                        {(positionActive.pnl || 0) >= 0 ? '+' : ''}{(positionActive.pnl || 0).toFixed(2)}%
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-surface2 border border-border2">
+                      <span className="text-txt3 block mb-0.5 uppercase text-[9px]">Résultat final</span>
+                      <span className={`font-bold text-[13px] uppercase ${formData.result === 'win' ? 'text-[#26a69a]' : formData.result === 'loss' ? 'text-[#ef5350]' : 'text-txt'}`}>
+                        {formData.result === 'win' ? '✓ WIN' : formData.result === 'loss' ? '✗ LOSS' : '— BE'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-txt3 text-[10px] font-bold uppercase tracking-wider block">Notes de clôture / Bilan</label>
+                    <textarea
+                      className="w-full min-h-[80px] p-2.5 bg-surface2 border border-border2 rounded-lg text-txt text-[12px] placeholder:text-txt3 focus:outline-none focus:border-accent"
+                      placeholder="Décris comment le trade s'est déroulé, tes émotions ou si tu as respecté ton plan..."
+                      value={formData.description || ''}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Assistant IA (Remplissage rapide si des images existent) - Masqué en mode backtest */}
+              {!backtestMode && (
+                <IAAnalysisPanel
+                  images={toutesLesImages}
+                  analysantIA={analysantIA}
+                  onAnalyze={analyserImageSelectionnee}
+                />
+              )}
 
             </div>
           )}
@@ -445,7 +667,15 @@ export function TradeDrawer() {
               disabled={enCours}
               className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
             >
-              {saving ? 'Enregistrement...' : isEditMode ? 'Mettre à jour' : 'Enregistrer'}
+              {saving
+                ? 'Enregistrement...'
+                : isEditMode
+                  ? 'Mettre à jour'
+                  : backtestMode
+                    ? positionActive?.estCloturee
+                      ? 'Enregistrer & Clôturer'
+                      : 'Enregistrer la Planification'
+                    : 'Enregistrer'}
             </button>
           </div>
         )}

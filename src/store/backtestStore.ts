@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Bougie } from '@/lib/chartDataHelper'
 
 /**
@@ -20,6 +21,15 @@ export interface PositionSimulee {
   dureeReelleBougies?: number;   // Calculé automatiquement à la clôture
   resultat?: 'win' | 'loss' | 'breakeven';
   pnl?: number;
+  tradeIdSupabase?: string;       // L'ID du trade associé dans Supabase (étapes 1 et 2)
+  stepIdsSupabase?: {             // Les IDs des étapes associées dans Supabase
+    biais: string;
+    poi: string;
+    entry: string;
+    result: string;
+  };
+  planificationEnregistree?: boolean; // Indique si la planification (étape 1) a été sauvée
+  estCloturee?: boolean;          // Indique si le replay ou l'utilisateur a fermé la position
 }
 
 interface BacktestState {
@@ -27,11 +37,16 @@ interface BacktestState {
   actif: string;
   donneesCompletes: Bougie[];
   indexCourant: number; // L'index de la dernière bougie visible sur le graphique
-  
+
+  // Paramètres de la source de données (utiles pour recharger après navigation)
+  paireCloud: string;    // Ex: 'EURUSD', 'GBPUSD'...
+  anneeCloud: string;    // Ex: '2024', '2025'...
+  timeframeSauvegarde: string; // Ex: 'H1', 'H4', 'D1'...
+
   // Contrôles du Replay
   estEnLecture: boolean;
   vitesseLecture: number; // Millisecondes par bougie
-  
+
   // Position active et historique
   positionActive: PositionSimulee | null;
   historiqueSimule: PositionSimulee[];
@@ -42,6 +57,9 @@ interface BacktestState {
   revenirDebut: () => void;
   setEstEnLecture: (val: boolean) => void;
   setVitesseLecture: (ms: number) => void;
+  setPaireCloud: (paire: string) => void;
+  setAnneeCloud: (annee: string) => void;
+  setTimeframeSauvegarde: (tf: string) => void;
   ouvrirPosition: (
     direction: 'long' | 'short',
     prixEntree: number,
@@ -53,21 +71,41 @@ interface BacktestState {
   ) => void;
   modifierPositionActive: (updates: Partial<PositionSimulee>) => void;
   fermerPositionManuellement: () => void;
+  archiverPositionActive: () => void;
+  annulerPositionActive: () => void;
   supprimerTradeHistorique: (index: number) => void;
   reinitialiserSession: () => void;
+  nettoyerRestaurationContexte: () => void;
+  lancerRestaurationContexte: (contexte: { pair: string; annee: string; timeframe: string; timestamp: number }) => void;
   couperReplayAIndex: (index: number) => void;
   injecterDonneesPrecedentes: (anciennesDonnees: Bougie[]) => void;
   mettreAJourDonneesMtf: (nouvellesDonnees: Bougie[]) => void;
+  contexteRestauration: { pair: string; annee: string; timeframe: string; timestamp: number } | null;
 }
 
-export const useBacktestStore = create<BacktestState>((set, get) => ({
+// Le store utilise le middleware 'persist' de Zustand pour sauvegarder l'état de session
+// dans le sessionStorage du navigateur. Cela permet de reprendre le backtest même après
+// avoir navigué vers une autre page.
+// IMPORTANT : les donneesCompletes (potentiellement très volumineuses) sont EXCLUES
+// de la persistance et rechargées automatiquement au retour sur la page.
+export const useBacktestStore = create<BacktestState>()(
+  persist(
+    (set, get) => ({
   actif: 'Aucun actif',
-  donneesCompletes: [],
+  donneesCompletes: [], // Jamais persisté (trop lourd pour le sessionStorage)
   indexCourant: 0,
   estEnLecture: false,
   vitesseLecture: 1000, // Par défaut : 1 bougie par seconde
   positionActive: null,
   historiqueSimule: [],
+
+  // Paramètres de la source pour le rechargement automatique
+  paireCloud: 'EURUSD',
+  anneeCloud: '2025',
+  timeframeSauvegarde: 'H1',
+
+  // Contexte de restauration de replay (clic depuis le journal)
+  contexteRestauration: null as { pair: string; annee: string; timeframe: string; timestamp: number } | null,
 
   // Initialise la session avec de nouvelles données
   // Par défaut, on affiche les 150 premières bougies pour donner du contexte au trader
@@ -248,7 +286,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
         }
       }
 
-      // Si le trade s'est fermé sur cette bougie, on calcule la durée réelle et on archive
+      // Si le trade s'est fermé sur cette bougie, on calcule la durée réelle et on le passe en mode clôturé
       if (positionMiseAJour.prixSortie) {
         if (Math.abs(positionMiseAJour.pnl || 0) < 0.05) {
           positionMiseAJour.resultat = 'breakeven';
@@ -256,15 +294,17 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
         // Calcul automatique de la durée réelle en bougies
         positionMiseAJour.indexSortie = prochainIndex;
         positionMiseAJour.dureeReelleBougies = prochainIndex - positionMiseAJour.indexEntree;
-        historiqueMisAJour.push(positionMiseAJour);
-        positionMiseAJour = null;
+        positionMiseAJour.estCloturee = true;
+        
+        // On stoppe le Replay automatiquement pour donner le temps de valider la fermeture
+        set({ estEnLecture: false });
+        console.log("⏱️ [Backtest Store] Replay mis en pause automatique car la position active a été touchée.");
       }
     }
 
     set({
       indexCourant: prochainIndex,
       positionActive: positionMiseAJour,
-      historiqueSimule: historiqueMisAJour,
     });
     return true;
   },
@@ -284,6 +324,12 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
 
   setEstEnLecture: (val) => set({ estEnLecture: val }),
   setVitesseLecture: (ms) => set({ vitesseLecture: ms }),
+
+  // Setters pour mémoriser les paramètres de chargement (paire, année, timeframe)
+  // Ces valeurs sont persistées pour savoir quoi recharger si les données sont perdues
+  setPaireCloud: (paire) => set({ paireCloud: paire }),
+  setAnneeCloud: (annee) => set({ anneeCloud: annee }),
+  setTimeframeSauvegarde: (tf) => set({ timeframeSauvegarde: tf }),
 
   ouvrirPosition: (direction, prixEntree, stopLoss, takeProfit, dureeEstimeeHeures, dureeEstimeeBougies, dureeEstimeeLargeur) => {
     const { donneesCompletes, indexCourant, positionActive } = get();
@@ -322,7 +368,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
 
   // Fermeture manuelle de la position au prix actuel du marché
   fermerPositionManuellement: () => {
-    const { positionActive, donneesCompletes, indexCourant, historiqueSimule } = get();
+    const { positionActive, donneesCompletes, indexCourant } = get();
     if (!positionActive) return;
 
     const bougieActuelle = donneesCompletes[indexCourant];
@@ -344,12 +390,32 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
         : pnlCalculé < -0.05 
           ? 'loss' 
           : 'breakeven',
+      estCloturee: true,
     };
 
     console.log(`🔒 [Backtest Store] Fermeture manuelle de la position à ${prixSortie}`);
     set({
+      positionActive: positionCloturee,
+    });
+  },
+
+  // Archive la position active clôturée dans l'historique et libère le store
+  archiverPositionActive: () => {
+    const { positionActive, historiqueSimule } = get();
+    if (!positionActive) return;
+
+    console.log("💾 [Backtest Store] Archivage du trade dans l'historique de session.");
+    set({
       positionActive: null,
-      historiqueSimule: [...historiqueSimule, positionCloturee],
+      historiqueSimule: [...historiqueSimule, positionActive],
+    });
+  },
+
+  // Annule/Supprime simplement la position active (non enregistrée)
+  annulerPositionActive: () => {
+    console.log("🗑️ [Backtest Store] Annulation de la position active.");
+    set({
+      positionActive: null,
     });
   },
 
@@ -371,7 +437,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   },
 
   // Repositionne le début du replay à un index donné, nettoyant la session en cours
-  // Exemple d'utilisation : couperReplayAIndex(250)
+  // Utilisé par le graphique au scroll ou par les clics utilisateurs
   couperReplayAIndex: (index) => {
     const { donneesCompletes } = get();
     const indexValide = Math.max(0, Math.min(index, donneesCompletes.length - 1));
@@ -382,5 +448,46 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       positionActive: null,
       historiqueSimule: [],
     });
+  },
+
+  nettoyerRestaurationContexte: () => {
+    set({ contexteRestauration: null });
+  },
+
+  // Prépare le contexte pour recharger le backtest à un instant précis
+  // Exemple d'utilisation : lancerRestaurationContexte({ pair: 'EURUSD', annee: '2025', timeframe: 'H1', timestamp: 1720000000 })
+  lancerRestaurationContexte: (contexte) => {
+    set({
+      contexteRestauration: contexte,
+      // Réinitialise la session active pour éviter les conflits,
+      // mais on va recharger les nouvelles données à l'UT voulue
+      positionActive: null,
+      historiqueSimule: [],
+    });
   }
-}));
+}
+),
+{
+  // Clé unique dans le sessionStorage du navigateur
+  // sessionStorage : survit aux navigations SPA et aux rechargements (F5), mais pas à la fermeture de l'onglet
+  name: 'backtest-session',
+  storage: createJSONStorage(() => sessionStorage),
+
+  // EXCLURE donneesCompletes de la persistance : potentiellement des MB de données
+  // qui dépasseraient la limite du sessionStorage (5-10 MB)
+  // Ces données sont rechargées automatiquement via paireCloud + anneeCloud
+  partialize: (state) => ({
+    actif: state.actif,
+    indexCourant: state.indexCourant,
+    vitesseLecture: state.vitesseLecture,
+    positionActive: state.positionActive,
+    historiqueSimule: state.historiqueSimule,
+    paireCloud: state.paireCloud,
+    anneeCloud: state.anneeCloud,
+    timeframeSauvegarde: state.timeframeSauvegarde,
+    contexteRestauration: state.contexteRestauration,
+    // donneesCompletes : volontairement EXCLU
+  }),
+}
+  )
+);

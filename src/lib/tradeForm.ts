@@ -19,6 +19,8 @@ export const INITIAL_FORM_STATE = {
   duree_estimee_heures: '',
   duree_estimee_bougies: '',
   duree_reelle_bougies: '',
+  backtest_context: null as any, // Stocke les informations de restauration pour le Replay (paire, année, timestamp, etc.)
+
 
   biais_timeframe: 'H4',
   biais_direction: 'Haussier',
@@ -172,6 +174,7 @@ export function tradeToFormData(trade: TradeWithSteps, existingImages: any[] = [
       reason_id: String(r.reason_id),
       variant_name: String(r.variant_name),
     })),
+    backtest_context: (trade as any).backtest_context ?? null,
   }
 }
 
@@ -303,6 +306,7 @@ export function buildTradePayload(formData: FormDataState, status: TradeWithStep
     duree_estimee_heures: formData.duree_estimee_heures ? parseFloat(formData.duree_estimee_heures) : null,
     duree_estimee_bougies: formData.duree_estimee_bougies ? parseInt(formData.duree_estimee_bougies, 10) : null,
     duree_reelle_bougies: formData.duree_reelle_bougies ? parseInt(formData.duree_reelle_bougies, 10) : null,
+    backtest_context: formData.backtest_context || null,
     status,
   }
 }

@@ -4,6 +4,7 @@ import { parserCsvPrix, agregerBougies } from '@/lib/chartDataHelper';
 import type { Bougie } from '@/lib/chartDataHelper';
 import { BacktestChart } from './BacktestChart';
 import { useUIStore } from '@/store';
+import { TradeDrawer } from '@/components/trade/TradeDrawer';
 import type { PositionSimulee } from '@/store/backtestStore';
 import { supabase } from '@/lib/supabase';
 import { uploadImage } from '@/lib/storage';
@@ -97,13 +98,8 @@ export function BacktestWorkspace() {
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [outilActif, setOutilActif] = useState<string | null>(null);
-  const [timeframe, setTimeframe] = useState('1h');
   const [estPleinEcran, setEstPleinEcran] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
-
-  // Actifs et Années pour la banque de données Cloud personnelle (GitHub)
-  const [paireCloud, setPaireCloud] = useState('EURUSD');
-  const [anneeCloud, setAnneeCloud] = useState('2025');
 
   // Cache des données brutes M1 pour la ré-agrégation MTF à la volée et le scroll infini
   const [donneesM1Chargees, setDonneesM1Chargees] = useState<Bougie[]>([]);
@@ -209,15 +205,68 @@ export function BacktestWorkspace() {
     fermerPositionManuellement,
     supprimerTradeHistorique,
     mettreAJourDonneesMtf,
+    // Paramètres de session persistés
+    paireCloud,
+    anneeCloud,
+    timeframeSauvegarde,
+    setPaireCloud,
+    setAnneeCloud,
+    setTimeframeSauvegarde,
+    contexteRestauration,
+    nettoyerRestaurationContexte,
   } = useBacktestStore();
 
+  // Le timeframe local est initialisé depuis le store persisté (timeframeSauvegarde)
+  // On utilise un useState local pour la réactivité UI, mais on le synchronise au store
+  const [timeframe, setTimeframeLocal] = useState(timeframeSauvegarde || 'H1');
+
+  // Fonction pour changer l'UT et mémoriser dans le store en même temps
+  // Exemple : setTimeframe('H4') → met à jour l'UI et persist dans le sessionStorage
+  const setTimeframe = (tf: string) => {
+    setTimeframeLocal(tf);
+    setTimeframeSauvegarde(tf);
+  };
+
   const openNewTradeWithPrefill = useUIStore((s) => s.openNewTradeWithPrefill);
+  const isNewTradeOpen = useUIStore((s) => s.isNewTradeOpen);
   const addToast = useUIStore((s) => s.addToast);
 
-  // Chargement automatique par défaut depuis le Cloud (EURUSD 2025) au premier montage
+  // Chargement automatique au premier montage OU si les données ont été perdues
+  // (ex: retour depuis une autre page après une réactualisation)
+  // Si donneesCompletes est vide MAIS que paireCloud est connu (persisté), on recharge automatiquement
   useEffect(() => {
-    chargerDonneesCloud('EURUSD', '2025');
+    // Si on a une restauration en cours, on laisse le useEffect dédié gérer
+    if (contexteRestauration) return;
+
+    if (donneesCompletes.length === 0) {
+      // Recharge la paire/année mémorisée dans le store (par défaut EURUSD 2025)
+      chargerDonneesCloud(paireCloud, anneeCloud);
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Détecte la demande de restauration de contexte depuis le journal (Replay Link)
+  useEffect(() => {
+    if (!contexteRestauration) return;
+
+    const restaurer = async () => {
+      const { pair, annee, timeframe: tfRestaurer, timestamp } = contexteRestauration;
+      console.log(`🔄 [Replay Link] Demande de restauration vers ${pair} ${annee} ${tfRestaurer} à timestamp ${timestamp}`);
+      
+      // 1. Met à jour l'UT locale
+      setTimeframeLocal(tfRestaurer);
+      setTimeframeSauvegarde(tfRestaurer);
+
+      // 2. Charge les données avec ciblage de bougie
+      await chargerDonneesCloud(pair, annee, timestamp, tfRestaurer);
+
+      // 3. Consomme le contexte pour ne pas reboucler
+      nettoyerRestaurationContexte();
+      addToast(`Replay positionné sur l'entrée de ton trade (${pair} en ${tfRestaurer})`, 'info');
+    };
+
+    restaurer();
+  }, [contexteRestauration]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Ré-agrégation automatique au changement d'unité de temps (UT) pour les données locales/cloud M1
   useEffect(() => {
@@ -240,6 +289,155 @@ export function BacktestWorkspace() {
     }, vitesseLecture);
     return () => clearInterval(intervalle);
   }, [estEnLecture, vitesseLecture, avancerBougie]);
+
+  // ─── Automatisation du Journaling en 2 Étapes ───────────────────────────────
+  const [initialisantPlanification, setInitialisantPlanification] = useState(false);
+  const [initialisantResolution, setInitialisantResolution] = useState(false);
+
+  // Capture le graphique et upload vers Supabase — utilisée automatiquement ET manuellement
+  // Retourne l'objet image prêt à insérer dans le formulaire, ou null si erreur
+  const capturerGraphique = useCallback(async (phase: 'avant' | 'apres'): Promise<{ id: string; url: string; source: 'upload'; phase: 'avant' | 'apres' } | null> => {
+    try {
+      if (!chartRef.current) return null;
+      const blob = await chartRef.current.takeScreenshot();
+      if (!blob) return null;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const path = `trade_images/${user.id}/${Date.now()}-backtest-${phase}.jpg`;
+      const url = await uploadImage(blob, path);
+      return { id: crypto.randomUUID(), url, source: 'upload' as const, phase };
+    } catch (err) {
+      console.error('❌ [Backtest] Échec de la capture :', err);
+      return null;
+    }
+  }, []);
+
+  const initialiserPlanificationTrade = useCallback(async (position: PositionSimulee) => {
+    setInitialisantPlanification(true);
+    // Capture automatique au moment de la pose de la position
+    const imageAvant = await capturerGraphique('avant');
+
+    const dateTexte = typeof position.dateEntree === 'number'
+      ? new Date(position.dateEntree * 1000).toISOString().split('T')[0]
+      : String(position.dateEntree).split('T')[0];
+
+    const plannedDiff = Math.abs(position.takeProfit - position.prixEntree);
+    const plannedRisk = Math.abs(position.prixEntree - position.stopLoss);
+    const rrP = plannedRisk > 0 ? (plannedDiff / plannedRisk).toFixed(2) : '1.00';
+
+    const imageAvant_obj = imageAvant ?? null;
+
+    const timestampUnix = typeof position.dateEntree === 'number'
+      ? position.dateEntree
+      : Math.floor(new Date(position.dateEntree).getTime() / 1000);
+
+    const contextReplay = {
+      pair: actif !== 'Aucun actif' && actif ? actif : paireCloud,
+      annee: anneeCloud,
+      timeframe: timeframe,
+      timestamp: timestampUnix,
+    };
+
+    const prefillObj = {
+      pair: actif !== 'Aucun actif' && actif ? actif : paireCloud,
+      direction: position.direction,
+      date_backtested: dateTexte,
+      result: 'win', // par défaut
+      journal_type: journalDest,
+      entry_price: position.prixEntree.toFixed(5),
+      entry_sl: position.stopLoss.toFixed(5),
+      entry_tp: position.takeProfit.toFixed(5),
+      rr_planned: rrP,
+      // Configuration des 3 sections d'avant-position
+      biais_timeframe: mapperTimeframe(timeframe),
+      biais_direction: position.direction === 'long' ? 'Haussier' : 'Baissier',
+      biais_images: imageAvant_obj ? [imageAvant_obj] : [],
+      poi_images: imageAvant_obj ? [imageAvant_obj] : [],
+      entry_images: imageAvant_obj ? [imageAvant_obj] : [],
+      backtest_context: contextReplay,
+    };
+
+    console.log("📡 [Backtest] Pré-remplissage Planification :", prefillObj);
+    openNewTradeWithPrefill(prefillObj);
+
+    setInitialisantPlanification(false);
+  }, [actif, paireCloud, journalDest, timeframe, openNewTradeWithPrefill, capturerGraphique]);
+
+  const initialiserResolutionTrade = useCallback(async (position: PositionSimulee) => {
+    setInitialisantResolution(true);
+    // Capture automatique à la clôture du trade
+    const imageApres = await capturerGraphique('apres');
+
+    const imageApres_obj = imageApres ?? null;
+
+    const resultMapping = position.resultat === 'win' ? 'win' as const
+      : position.resultat === 'loss' ? 'loss' as const
+      : position.resultat === 'breakeven' ? 'breakeven' as const
+      : 'missed' as const;
+
+    const plannedDiff = Math.abs(position.takeProfit - position.prixEntree);
+    const plannedRisk = Math.abs(position.prixEntree - position.stopLoss);
+    const rrP = plannedRisk > 0 ? (plannedDiff / plannedRisk).toFixed(2) : '1.00';
+
+    const realizedDiff = Math.abs((position.prixSortie || 0) - position.prixEntree);
+    const rrR = plannedRisk > 0 ? (realizedDiff / plannedRisk).toFixed(2) : '0';
+
+    const timestampUnix = typeof position.dateEntree === 'number'
+      ? position.dateEntree
+      : Math.floor(new Date(position.dateEntree).getTime() / 1000);
+
+    const contextReplay = {
+      pair: actif !== 'Aucun actif' && actif ? actif : paireCloud,
+      annee: anneeCloud,
+      timeframe: timeframe,
+      timestamp: timestampUnix,
+    };
+
+    const prefillObj = {
+      pair: actif !== 'Aucun actif' && actif ? actif : paireCloud,
+      direction: position.direction,
+      result: resultMapping,
+      journal_type: journalDest,
+      entry_price: position.prixEntree.toFixed(5),
+      entry_sl: position.stopLoss.toFixed(5),
+      entry_tp: position.takeProfit.toFixed(5),
+      rr_planned: rrP,
+      rr_realized: rrR,
+      pnl: position.pnl !== undefined ? Number(position.pnl.toFixed(2)) : 0,
+      duree_reelle_bougies: position.dureeReelleBougies !== undefined ? String(position.dureeReelleBougies) : '',
+      entry_images: imageApres_obj ? [imageApres_obj] : [],
+      backtest_context: contextReplay,
+    };
+
+    console.log("📡 [Backtest] Pré-remplissage Résolution :", prefillObj);
+    openNewTradeWithPrefill(prefillObj);
+
+    setInitialisantResolution(false);
+  }, [actif, paireCloud, journalDest, openNewTradeWithPrefill, capturerGraphique]);
+
+  // Hook pour observer l'ouverture d'une nouvelle position active (Étape 1)
+  const lastPositionRef = useRef<PositionSimulee | null>(null);
+  useEffect(() => {
+    if (positionActive && positionActive !== lastPositionRef.current && !positionActive.planificationEnregistree && !positionActive.estCloturee) {
+      lastPositionRef.current = positionActive;
+      initialiserPlanificationTrade(positionActive);
+    }
+    if (!positionActive) {
+      lastPositionRef.current = null;
+    }
+  }, [positionActive, initialiserPlanificationTrade]);
+
+  // Hook pour observer la clôture d'une position active (Étape 2)
+  const lastClotureRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (positionActive && positionActive.estCloturee && !lastClotureRef.current) {
+      lastClotureRef.current = true;
+      initialiserResolutionTrade(positionActive);
+    }
+    if (!positionActive || !positionActive.estCloturee) {
+      lastClotureRef.current = false;
+    }
+  }, [positionActive, initialiserResolutionTrade]);
 
   // ─── Raccourcis clavier ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -302,7 +500,7 @@ export function BacktestWorkspace() {
   };
 
   // ─── Chargement Cloud depuis le Dépôt GitHub public ────────────────────────
-  const chargerDonneesCloud = async (paireSel: string, anneeSel: string) => {
+  const chargerDonneesCloud = async (paireSel: string, anneeSel: string, targetTimestamp?: number, targetTimeframe?: string) => {
     setChargement(true);
     setErreur(null);
     try {
@@ -326,12 +524,44 @@ export function BacktestWorkspace() {
       setDonneesM1Chargees(bougiesM1);
       const anneeInt = parseInt(anneeSel);
       setAnneeMinimumChargee(anneeInt);
+      // Mémoriser la paire et l'année dans le store (persisté en sessionStorage)
+      // Cela permet de recharger les bonnes données si l'utilisateur revient sur la page
       setPaireCloud(paireSel.toUpperCase());
+      setAnneeCloud(anneeSel);
+
+      const activeTf = targetTimeframe || timeframe;
 
       // Agréger pour le timeframe actif
-      const bougiesAgregees = agregerBougies(bougiesM1, timeframe);
+      const bougiesAgregees = agregerBougies(bougiesM1, activeTf);
       chargerDonnees(bougiesAgregees, paireSel.toUpperCase());
-      addToast(`${paireSel.toUpperCase()} (${anneeSel}) — Données chargées et agrégées en ${timeframe}`, 'success');
+
+      // Si un timestamp de ciblage est spécifié (restauration de trade)
+      if (targetTimestamp !== undefined) {
+        const targetTimeVal = targetTimestamp;
+        let indexTrouve = bougiesAgregees.findIndex(b => {
+          const t = typeof b.time === 'number' ? b.time : Math.floor(new Date(b.time).getTime() / 1000);
+          return t === targetTimeVal;
+        });
+
+        // Si non trouvé exactement, cherche le plus proche inférieur ou égal
+        if (indexTrouve === -1) {
+          indexTrouve = bougiesAgregees.findIndex(b => {
+            const t = typeof b.time === 'number' ? b.time : Math.floor(new Date(b.time).getTime() / 1000);
+            return t > targetTimeVal;
+          }) - 1;
+        }
+
+        if (indexTrouve >= 0 && indexTrouve < bougiesAgregees.length) {
+          // On avance l'index de + 15 bougies pour laisser voir le déclenchement et un bout du déroulement
+          const indexCible = Math.min(indexTrouve + 15, bougiesAgregees.length - 1);
+          console.log(`🎯 [Replay Link] Positionnement du graphique à l'index ${indexCible} (bougie exacte index ${indexTrouve})`);
+          useBacktestStore.setState({ indexCourant: indexCible });
+        } else {
+          console.warn(`[Replay Link] Impossible de trouver la bougie pour le timestamp ${targetTimestamp}`);
+        }
+      }
+
+      addToast(`${paireSel.toUpperCase()} (${anneeSel}) — Données chargées et agrégées en ${activeTf}`, 'success');
     } catch (err: any) {
       console.error(err);
       setErreur(err.message || "Erreur lors du chargement des données depuis le Cloud.");
@@ -340,6 +570,7 @@ export function BacktestWorkspace() {
       setChargement(false);
     }
   };
+
 
   // ─── Défilement Infini : Chargement automatique de l'année précédente ──────
   const chargerAnneePrecedenteCloud = useCallback(async () => {
@@ -877,136 +1108,138 @@ export function BacktestWorkspace() {
           />
         </div>
 
-        {/* ─── PANEL DROIT : Position active + Historique ─── */}
+        {/* ─── PANEL DROIT : Position active + Historique OU TradeDrawer Inline ─── */}
         {/* Se place en-dessous du graphique sur mobile, et à sa droite sur écran moyen (md) */}
-        <div className={`w-full md:w-[280px] flex flex-col border-t md:border-t-0 md:border-l flex-shrink-0 ${C.bgPanel}`}>
-
-          {/* Stats rapides de session */}
-          <div className={`px-4 py-3 border-b flex items-center gap-4 text-[11px] ${C.border}`}>
-            <div>
-              <span className={C.textMuted}>Trades</span>
-              <span className={`font-semibold ml-1.5 ${C.textNormal}`}>{historiqueSimule.length}</span>
-            </div>
-            <div>
-              <span className={C.textMuted}>Winrate</span>
-              <span className={`font-semibold ml-1.5 ${winrate >= 50 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>{winrate}%</span>
-            </div>
-            {pnlFlottant !== null && (
-              <div className="ml-auto">
-                <span className={C.textMuted}>PnL</span>
-                <span className={`font-semibold font-mono ml-1 ${pnlFlottant >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
-                  {pnlFlottant >= 0 ? '+' : ''}{pnlFlottant.toFixed(2)}%
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Position active */}
-          {positionActive ? (
-            <div className={`px-4 py-3 border-b space-y-2 ${C.border}`}>
-              <div className="flex items-center justify-between">
-                <span className={`text-[11px] font-bold px-2 py-0.5 rounded uppercase
-                  ${positionActive.direction === 'long'
-                    ? 'bg-[#26a69a]/20 text-[#26a69a] border border-[#26a69a]/30'
-                    : 'bg-[#ef5350]/20 text-[#ef5350] border border-[#ef5350]/30'
-                  }`}>
-                  {positionActive.direction === 'long' ? '▲ LONG' : '▼ SHORT'}
-                </span>
-                <span className={`text-[10px] ${C.textMuted}`}>position active</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
-                <div className={`p-2 rounded ${C.inputBg}`}>
-                  <div className={`text-[9px] uppercase mb-0.5 ${C.textMuted}`}>Entrée</div>
-                  <div className={C.textNormal}>{positionActive.prixEntree.toFixed(5)}</div>
-                </div>
-                <div className={`p-2 rounded ${C.inputBg}`}>
-                  <div className={`text-[9px] uppercase mb-0.5 ${C.textMuted}`}>Prix actuel</div>
-                  <div className={pnlFlottant && pnlFlottant >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}>{prixActuel.toFixed(5)}</div>
-                </div>
-                <div className="bg-red-950/40 p-2 rounded border border-red-800/30">
-                  <div className="text-red-400/70 text-[9px] uppercase mb-0.5">Stop Loss</div>
-                  <div className="text-red-400">{positionActive.stopLoss.toFixed(5)}</div>
-                </div>
-                <div className="bg-emerald-950/40 p-2 rounded border border-emerald-800/30">
-                  <div className="text-emerald-400/70 text-[9px] uppercase mb-0.5">Take Profit</div>
-                  <div className="text-emerald-400">{positionActive.takeProfit.toFixed(5)}</div>
-                </div>
-              </div>
-
-              <button
-                onClick={fermerPositionManuellement}
-                className="w-full py-2 bg-[#ef5350] hover:bg-[#e53935] text-white text-[11px] font-bold rounded transition-colors"
-              >
-                🔒 Clôturer la position
-              </button>
-            </div>
-          ) : (
-            <div className={`px-4 py-4 border-b text-[11px] text-center ${C.border} ${C.textMuted}`}>
-              <div className="text-2xl mb-2">📈</div>
-              <p className="leading-relaxed">
-                Sélectionne <strong className="text-[#26a69a]">▲ Long</strong> ou <strong className="text-[#ef5350]">▼ Short</strong> dans la barre et clique 3× sur le graphique pour poser ta position.
+        <div className={`w-full ${isNewTradeOpen || initialisantPlanification || initialisantResolution ? 'md:w-[420px]' : 'md:w-[300px]'} flex flex-col border-t md:border-t-0 md:border-l flex-shrink-0 transition-all duration-300 ${C.bgPanel}`}>
+          {initialisantPlanification || initialisantResolution ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-3 text-center bg-surface">
+              <span className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"></span>
+              <p className="text-xs font-semibold text-txt">
+                {initialisantPlanification 
+                  ? "Planification : capture automatique du graphique..." 
+                  : "Résolution : capture automatique de clôture..."}
               </p>
+              <p className="text-[10px] text-txt3">Veuillez patienter pendant l'upload...</p>
             </div>
-          )}
-
-          {/* Historique des trades simulés */}
-          <div className="flex-grow md:flex-1 md:overflow-y-auto">
-            <div className={`px-4 py-2 border-b text-[10px] uppercase tracking-wider font-semibold ${C.border} ${C.textMuted}`}>
-              Historique de session
-            </div>
-
-            {historiqueSimule.length === 0 ? (
-              <div className={`flex items-center justify-center h-32 text-[11px] text-center px-4 ${C.textMuted}`}>
-                Les trades fermés apparaîtront ici.
+          ) : isNewTradeOpen ? (
+            <TradeDrawer isInline={true} backtestMode={true} onCaptureGraphique={capturerGraphique} />
+          ) : (
+            <>
+              {/* Stats rapides de session */}
+              <div className={`px-4 py-3 border-b flex items-center gap-4 text-[11px] ${C.border}`}>
+                <div>
+                  <span className={C.textMuted}>Trades</span>
+                  <span className={`font-semibold ml-1.5 ${C.textNormal}`}>{historiqueSimule.length}</span>
+                </div>
+                <div>
+                  <span className={C.textMuted}>Winrate</span>
+                  <span className={`font-semibold ml-1.5 ${winrate >= 50 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>{winrate}%</span>
+                </div>
+                {pnlFlottant !== null && (
+                  <div className="ml-auto">
+                    <span className={C.textMuted}>PnL</span>
+                    <span className={`font-semibold font-mono ml-1 ${pnlFlottant >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+                      {pnlFlottant >= 0 ? '+' : ''}{pnlFlottant.toFixed(2)}%
+                    </span>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className={`space-y-0 divide-y ${C.divider}`}>
-                {[...historiqueSimule].reverse().map((trade, idx) => {
-                  const realIdx = historiqueSimule.length - 1 - idx;
-                  return (
-                    <div key={realIdx} className={`px-3 py-2.5 transition-colors ${C.hoverRow}`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase
-                          ${trade.direction === 'long' ? 'text-[#26a69a] bg-[#26a69a]/10' : 'text-[#ef5350] bg-[#ef5350]/10'}`}>
-                          {trade.direction === 'long' ? '▲' : '▼'} {trade.direction.toUpperCase()}
-                        </span>
-                        <span className={`text-[11px] font-bold font-mono
-                          ${trade.resultat === 'win' ? 'text-[#26a69a]' : trade.resultat === 'loss' ? 'text-[#ef5350]' : C.textMuted}`}>
-                          {trade.pnl !== undefined ? `${trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}%` : '—'}
-                        </span>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        {(() => {
-                          const tradeUid = `${trade.dateEntree}-${trade.prixEntree}`;
-                          const estEnExport = exportantTradeId === tradeUid;
-                          return (
+              {/* Position active */}
+              {positionActive ? (
+                <div className={`px-4 py-3 border-b space-y-2 ${C.border}`}>
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded uppercase
+                      ${positionActive.direction === 'long'
+                        ? 'bg-[#26a69a]/20 text-[#26a69a] border border-[#26a69a]/30'
+                        : 'bg-[#ef5350]/20 text-[#ef5350] border border-[#ef5350]/30'
+                      }`}>
+                      {positionActive.direction === 'long' ? '▲ LONG' : '▼ SHORT'}
+                    </span>
+                    <span className={`text-[10px] ${C.textMuted}`}>position active</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+                    <div className={`p-2 rounded ${C.inputBg}`}>
+                      <div className={`text-[9px] uppercase mb-0.5 ${C.textMuted}`}>Entrée</div>
+                      <div className={C.textNormal}>{positionActive.prixEntree.toFixed(5)}</div>
+                    </div>
+                    <div className={`p-2 rounded ${C.inputBg}`}>
+                      <div className={`text-[9px] uppercase mb-0.5 ${C.textMuted}`}>Prix actuel</div>
+                      <div className={pnlFlottant && pnlFlottant >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}>{prixActuel.toFixed(5)}</div>
+                    </div>
+                    <div className="bg-red-950/40 p-2 rounded border border-red-800/30">
+                      <div className="text-red-400/70 text-[9px] uppercase mb-0.5">Stop Loss</div>
+                      <div className="text-red-400">{positionActive.stopLoss.toFixed(5)}</div>
+                    </div>
+                    <div className="bg-emerald-950/40 p-2 rounded border border-emerald-800/30">
+                      <div className="text-emerald-400/70 text-[9px] uppercase mb-0.5">Take Profit</div>
+                      <div className="text-emerald-400">{positionActive.takeProfit.toFixed(5)}</div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={fermerPositionManuellement}
+                    className="w-full py-2 bg-[#ef5350] hover:bg-[#e53935] text-white text-[11px] font-bold rounded transition-colors"
+                  >
+                    🔒 Clôturer la position
+                  </button>
+                </div>
+              ) : (
+                <div className={`px-4 py-4 border-b text-[11px] text-center ${C.border} ${C.textMuted}`}>
+                  <div className="text-2xl mb-2">📈</div>
+                  <p className="leading-relaxed">
+                    Sélectionne <strong className="text-[#26a69a]">▲ Long</strong> ou <strong className="text-[#ef5350]">▼ Short</strong> dans la barre et clique 3× sur le graphique pour poser ta position.
+                  </p>
+                </div>
+              )}
+
+              {/* Historique des trades simulés */}
+              <div className="flex-grow md:flex-1 md:overflow-y-auto">
+                <div className={`px-4 py-2 border-b text-[10px] uppercase tracking-wider font-semibold ${C.border} ${C.textMuted}`}>
+                  Historique de session
+                </div>
+
+                {historiqueSimule.length === 0 ? (
+                  <div className={`flex items-center justify-center h-32 text-[11px] text-center px-4 ${C.textMuted}`}>
+                    Les trades fermés apparaîtront ici.
+                  </div>
+                ) : (
+                  <div className={`space-y-0 divide-y ${C.divider}`}>
+                    {[...historiqueSimule].reverse().map((trade, idx) => {
+                      const realIdx = historiqueSimule.length - 1 - idx;
+                      const tradeUid = `${trade.dateEntree}-${trade.prixEntree}`;
+                      const estEnExport = exportantTradeId === tradeUid;
+                      return (
+                        <div key={realIdx} className={`px-3 py-2.5 transition-colors ${C.hoverRow}`}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase
+                              ${trade.direction === 'long' ? 'text-[#26a69a] bg-[#26a69a]/10' : 'text-[#ef5350] bg-[#ef5350]/10'}`}>
+                              {trade.direction === 'long' ? '▲' : '▼'} {trade.direction.toUpperCase()}
+                            </span>
+                            <span className={`text-[11px] font-bold font-mono
+                              ${trade.resultat === 'win' ? 'text-[#26a69a]' : trade.resultat === 'loss' ? 'text-[#ef5350]' : C.textMuted}`}>
+                              {trade.pnl !== undefined ? `${trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}%` : '—'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
                             <button
                               onClick={() => exporterVersJournal(trade)}
                               disabled={exportantTradeId !== null}
-                              className="flex-1 py-1.5 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[10px] font-bold rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                              className="flex-grow py-1 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[10px] font-bold rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
                             >
-                              {estEnExport ? (
-                                <>
-                                  <span className="w-3.5 h-3.5 border border-white/20 border-t-white rounded-full animate-spin"></span>
-                                  Capture du graphique...
-                                </>
-                              ) : (
-                                journalDest === 'global' ? 'Enregistrer dans Global' :
-                                journalDest === 'bias' ? 'Enregistrer dans Biais' :
-                                journalDest === 'poi' ? 'Enregistrer dans POI' :
-                                'Enregistrer dans Confirmation'
-                              )}
+                              {estEnExport ? '⌛' : '📤 Exporter'}
                             </button>
-                          );
-                        })()}
-                        <button
-                          onClick={() => supprimerTradeHistorique(realIdx)}
-                          className={`w-7 h-7 flex items-center justify-center rounded transition-colors text-xs ${C.btnBase} hover:text-[#ef5350]`}
-                        >✕</button>
-                      </div>
-                    </div>
+                            <button
+                              onClick={() => supprimerTradeHistorique(realIdx)}
+                              className={`w-7 h-7 flex items-center justify-center rounded transition-colors text-xs ${C.btnBase} hover:text-[#ef5350]`}
+                              title="Supprimer ce trade de la session"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
                   );
                 })}
               </div>
@@ -1024,9 +1257,11 @@ export function BacktestWorkspace() {
               </div>
             )}
           </div>
-        </div>
-
-      </div>
+        </>
+      )}
     </div>
+
+  </div>
+</div>
   );
 }
