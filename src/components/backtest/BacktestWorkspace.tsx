@@ -329,6 +329,7 @@ export function BacktestWorkspace() {
     historiqueSimule,
     chargerDonnees,
     avancerBougie,
+    reculerBougie,
     revenirDebut,
     setEstEnLecture,
     setVitesseLecture,
@@ -442,6 +443,42 @@ export function BacktestWorkspace() {
     }
   }, []);
 
+  // Calcule automatiquement la session de trading en fonction de l'heure UTC de la bougie d'entrée
+  const detecterSession = (timestampUnix: number): string => {
+    const date = new Date(timestampUnix * 1000);
+    const heure = date.getUTCHours();
+    // Session London : 07h00 - 12h00 UTC
+    // Session New York : 12h00 - 20h00 UTC
+    // Session Asian : 20h00 - 07h00 UTC
+    if (heure >= 7 && heure < 12) return 'London';
+    if (heure >= 12 && heure < 20) return 'New York';
+    return 'Asian';
+  };
+
+  // Convertit un timestamp Unix en format d'heure HH:MM pour le formulaire
+  const formaterHeure = (timestampUnix: number | undefined): string => {
+    if (!timestampUnix) return '';
+    const date = new Date(timestampUnix * 1000);
+    const h = String(date.getUTCHours()).padStart(2, '0');
+    const m = String(date.getUTCMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  };
+
+  // Propose une unité de temps (timeframe) logique et supérieure pour le POI
+  const calculerPoiTimeframe = (tfBacktest: string): string => {
+    switch (tfBacktest) {
+      case '1m': return 'M15';
+      case '3m': return 'M15';
+      case '5m': return 'H1';
+      case '15m': return 'H1';
+      case '30m': return 'H4';
+      case '1h': return 'H4';
+      case '4h': return 'D1';
+      case '1d': return 'W1';
+      default: return 'H1';
+    }
+  };
+
   const initialiserPlanificationTrade = useCallback(async (position: PositionSimulee) => {
     setInitialisantPlanification(true);
     // Capture automatique au moment de la pose de la position
@@ -472,15 +509,26 @@ export function BacktestWorkspace() {
       pair: actif !== 'Aucun actif' && actif ? actif : paireCloud,
       direction: position.direction,
       date_backtested: dateTexte,
-      result: 'win', // par défaut
+      result: 'win' as const,
       journal_type: journalDest,
       entry_price: position.prixEntree.toFixed(5),
       entry_sl: position.stopLoss.toFixed(5),
       entry_tp: position.takeProfit.toFixed(5),
       rr_planned: rrP,
-      // Configuration des 3 sections d'avant-position
+      
+      // -- Enrichissements intelligents --
+      session: detecterSession(timestampUnix),
+      entry_time: formaterHeure(timestampUnix),
+      duree_estimee_heures: position.dureeEstimeeHeures !== undefined ? String(position.dureeEstimeeHeures) : '',
+      duree_estimee_bougies: position.dureeEstimeeBougies !== undefined ? String(position.dureeEstimeeBougies) : '',
+      
       biais_timeframe: mapperTimeframe(timeframe),
       biais_direction: position.direction === 'long' ? 'Haussier' : 'Baissier',
+      poi_timeframe: calculerPoiTimeframe(timeframe),
+      poi_type: 'Order Block',
+      entry_timeframe: mapperTimeframe(timeframe),
+
+      // Configuration des 3 sections d'avant-position
       biais_images: imageAvant_obj ? [imageAvant_obj] : [],
       poi_images: imageAvant_obj ? [imageAvant_obj] : [],
       entry_images: imageAvant_obj ? [imageAvant_obj] : [],
@@ -516,6 +564,20 @@ export function BacktestWorkspace() {
       ? position.dateEntree
       : Math.floor(new Date(position.dateEntree).getTime() / 1000);
 
+    const timestampSortie = typeof position.dateSortie === 'number'
+      ? position.dateSortie
+      : position.dateSortie ? Math.floor(new Date(position.dateSortie).getTime() / 1000) : undefined;
+
+    // Déterminer le type de sortie exact (TP, SL, ou Manuel)
+    let exitType: 'tp' | 'sl' | 'manual' | 'breakeven' = 'manual';
+    if (position.resultat === 'win') {
+      exitType = 'tp';
+    } else if (position.resultat === 'loss') {
+      exitType = 'sl';
+    } else if (position.resultat === 'breakeven') {
+      exitType = 'breakeven';
+    }
+
     const contextReplay = {
       pair: actif !== 'Aucun actif' && actif ? actif : paireCloud,
       annee: anneeCloud,
@@ -535,6 +597,19 @@ export function BacktestWorkspace() {
       rr_realized: rrR,
       pnl: position.pnl !== undefined ? Number(position.pnl.toFixed(2)) : 0,
       duree_reelle_bougies: position.dureeReelleBougies !== undefined ? String(position.dureeReelleBougies) : '',
+      
+      // -- Enrichissements intelligents --
+      session: detecterSession(timestampUnix),
+      entry_time: formaterHeure(timestampUnix),
+      exit_time: timestampSortie ? formaterHeure(timestampSortie) : '',
+      exit_type: exitType,
+      duree_estimee_heures: position.dureeEstimeeHeures !== undefined ? String(position.dureeEstimeeHeures) : '',
+      duree_estimee_bougies: position.dureeEstimeeBougies !== undefined ? String(position.dureeEstimeeBougies) : '',
+      
+      biais_timeframe: mapperTimeframe(timeframe),
+      poi_timeframe: calculerPoiTimeframe(timeframe),
+      entry_timeframe: mapperTimeframe(timeframe),
+
       entry_images: imageApres_obj ? [imageApres_obj] : [],
       backtest_context: contextReplay,
     };
@@ -543,7 +618,7 @@ export function BacktestWorkspace() {
     openNewTradeWithPrefill(prefillObj);
 
     setInitialisantResolution(false);
-  }, [actif, paireCloud, journalDest, openNewTradeWithPrefill, capturerGraphique]);
+  }, [actif, paireCloud, journalDest, timeframe, openNewTradeWithPrefill, capturerGraphique]);
 
   // Hook pour observer l'ouverture d'une nouvelle position active (Étape 1) - Déclenchement auto désactivé
   const lastPositionRef = useRef<PositionSimulee | null>(null);
@@ -1300,12 +1375,13 @@ export function BacktestWorkspace() {
 
             {/* ⏪ Reculer/Bougie précédente */}
             <button
-              onClick={() => avancerBougie()}
+              onClick={() => reculerBougie()}
               title="Bougie précédente"
               className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors ${C.btnBase}`}
             >
               ⏪
             </button>
+
 
             {/* ▶ / ⏸ Play / Pause */}
             <button

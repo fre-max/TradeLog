@@ -54,7 +54,9 @@ interface BacktestState {
   // Actions
   chargerDonnees: (donnees: Bougie[], nomActif: string) => void;
   avancerBougie: () => boolean; // Retourne true s'il y avait une bougie à avancer, false sinon
+  reculerBougie: () => boolean; // Retourne true s'il y avait une bougie à reculer, false sinon
   revenirDebut: () => void;
+
   setEstEnLecture: (val: boolean) => void;
   setVitesseLecture: (ms: number) => void;
   setPaireCloud: (paire: string) => void;
@@ -308,6 +310,34 @@ export const useBacktestStore = create<BacktestState>()(
     });
     return true;
   },
+
+  // Recule le replay d'une bougie et rouvre le trade s'il a été clôturé après
+  reculerBougie: () => {
+    const { indexCourant, positionActive } = get();
+    if (indexCourant <= 0) return false;
+
+    const precedentIndex = indexCourant - 1;
+    let positionMiseAJour = positionActive ? { ...positionActive } : null;
+
+    // Si le trade s'est fermé après (indexSortie > precedentIndex), on le réouvre
+    if (positionMiseAJour && positionMiseAJour.indexSortie !== undefined && positionMiseAJour.indexSortie > precedentIndex) {
+      positionMiseAJour.prixSortie = undefined;
+      positionMiseAJour.dateSortie = undefined;
+      positionMiseAJour.indexSortie = undefined;
+      positionMiseAJour.dureeReelleBougies = undefined;
+      positionMiseAJour.resultat = undefined;
+      positionMiseAJour.pnl = undefined;
+      positionMiseAJour.estCloturee = false;
+      console.log("🔓 [Backtest Store] Réouverture de la position active (retour dans le passé).");
+    }
+
+    set({
+      indexCourant: precedentIndex,
+      positionActive: positionMiseAJour,
+    });
+    return true;
+  },
+
 
   // Revient à l'état initial (les 150 premières bougies) pour recommencer
   revenirDebut: () => {
