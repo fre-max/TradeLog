@@ -2,6 +2,7 @@ import { useBrouillonStore } from '@/store/brouillonStore'
 import type { Brouillon } from '@/store/brouillonStore'
 import { BrouillonPanel } from './BrouillonPanel'
 import { BrouillonSectionModal } from './BrouillonSectionModal'
+import { useLocation } from 'react-router-dom'
 
 /**
  * Bouton flottant "Brouillons" positionné au-dessus du bouton "Bot Telegram".
@@ -13,6 +14,12 @@ import { BrouillonSectionModal } from './BrouillonSectionModal'
  */
 export function BrouillonButton() {
   const { ouvrirPanel, brouillons } = useBrouillonStore()
+  const location = useLocation()
+
+  // On masque le bouton de brouillon dans la section Backtest pour libérer de l'espace et éviter les chevauchements
+  if (location.pathname === '/backtest') {
+    return null
+  }
 
   // Compte le total de sections remplies dans tous les brouillons
   // Exemple : si Brouillon 1 a Biais + POI et Brouillon 2 a Entrée → total = 3
@@ -21,6 +28,7 @@ export function BrouillonButton() {
   }, 0)
 
   const aSections = totalSectionsRemplies > 0
+
 
   return (
     <>

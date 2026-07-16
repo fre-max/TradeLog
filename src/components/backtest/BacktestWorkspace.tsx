@@ -95,11 +95,13 @@ function getThemeClasses(theme: 'dark' | 'light') {
 export function BacktestWorkspace() {
 
   // ─── États locaux ────────────────────────────────────────────────────────────
+  const [largeurFenetre, setLargeurFenetre] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [outilActif, setOutilActif] = useState<string | null>(null);
   const [estPleinEcran, setEstPleinEcran] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
+
 
   // Cache des données brutes M1 pour la ré-agrégation MTF à la volée et le scroll infini
   const [donneesM1Chargees, setDonneesM1Chargees] = useState<Bougie[]>([]);
@@ -110,6 +112,136 @@ export function BacktestWorkspace() {
   const [journalDest, setJournalDest] = useState<'global' | 'bias' | 'poi' | 'confirmation'>('global');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Positionnement dynamique des widgets par rapport au parent
+  const [hasDraggedUt, setHasDraggedUt] = useState(false);
+  const [utPos, setUtPos] = useState({ x: 80, y: 20 });
+  const [isDraggingUt, setIsDraggingUt] = useState(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+
+  const [hasDraggedReplay, setHasDraggedReplay] = useState(false);
+  const [replayPos, setReplayPos] = useState({ x: 0, y: 0 });
+  const [isDraggingReplay, setIsDraggingReplay] = useState(false);
+  const dragOffsetReplayRef = useRef({ x: 0, y: 0 });
+
+  // Gère le début du déplacement (curseur & tactile)
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    // Utilisation de nativeEvent ou cast en any pour éviter les erreurs d'incompatibilité TS2352
+    const eventAny = e as any;
+    const clientX = 'touches' in eventAny ? eventAny.touches[0].clientX : eventAny.clientX;
+    const clientY = 'touches' in eventAny ? eventAny.touches[0].clientY : eventAny.clientY;
+
+    const handle = e.currentTarget as HTMLElement;
+    const widget = handle.parentElement;
+    if (!widget) return;
+
+    const rect = widget.getBoundingClientRect();
+    const parent = widget.parentElement;
+    if (!parent) return;
+    const parentRect = parent.getBoundingClientRect();
+
+    // Position relative de départ
+    const initialX = rect.left - parentRect.left;
+    const initialY = rect.top - parentRect.top;
+
+    setIsDraggingUt(true);
+    setHasDraggedUt(true);
+    setUtPos({ x: initialX, y: initialY });
+    dragOffsetRef.current = {
+      x: clientX - initialX,
+      y: clientY - initialY,
+    };
+  };
+
+  // Gère le début du déplacement du Dock de Replay
+  const handleDragReplayStart = (e: React.MouseEvent | React.TouchEvent) => {
+    const eventAny = e as any;
+    const clientX = 'touches' in eventAny ? eventAny.touches[0].clientX : eventAny.clientX;
+    const clientY = 'touches' in eventAny ? eventAny.touches[0].clientY : eventAny.clientY;
+
+    const handle = e.currentTarget as HTMLElement;
+    const widget = handle.parentElement;
+    if (!widget) return;
+
+    const rect = widget.getBoundingClientRect();
+    const parent = widget.parentElement;
+    if (!parent) return;
+    const parentRect = parent.getBoundingClientRect();
+
+    const initialX = rect.left - parentRect.left;
+    const initialY = rect.top - parentRect.top;
+
+    setIsDraggingReplay(true);
+    setHasDraggedReplay(true);
+    setReplayPos({ x: initialX, y: initialY });
+    dragOffsetReplayRef.current = {
+      x: clientX - initialX,
+      y: clientY - initialY,
+    };
+  };
+
+
+  // Met à jour la position de l'UT pendant le drag
+  useEffect(() => {
+    if (!isDraggingUt) return;
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      
+      const nextX = Math.max(10, Math.min(clientX - dragOffsetRef.current.x, window.innerWidth - 350));
+      const nextY = Math.max(10, Math.min(clientY - dragOffsetRef.current.y, window.innerHeight - 150));
+      
+      setUtPos({ x: nextX, y: nextY });
+    };
+
+    const handleEnd = () => {
+      setIsDraggingUt(false);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener('touchmove', handleMove, { passive: true });
+    window.addEventListener('touchend', handleEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDraggingUt]);
+
+  // Met à jour la position du Dock de Replay pendant le drag
+  useEffect(() => {
+    if (!isDraggingReplay) return;
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      
+      const nextX = Math.max(10, Math.min(clientX - dragOffsetReplayRef.current.x, window.innerWidth - 300));
+      const nextY = Math.max(10, Math.min(clientY - dragOffsetReplayRef.current.y, window.innerHeight - 100));
+      
+      setReplayPos({ x: nextX, y: nextY });
+    };
+
+    const handleEnd = () => {
+      setIsDraggingReplay(false);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener('touchmove', handleMove, { passive: true });
+    window.addEventListener('touchend', handleEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDraggingReplay]);
 
   // Convertit le timeframe de Binance vers le format attendu par le journal
   const mapperTimeframe = (tf: string) => {
@@ -143,8 +275,6 @@ export function BacktestWorkspace() {
   // Position calculée à l'écran pour le menu déroulant fixe (évite l'overflow du header)
   const [positionMenu, setPositionMenu] = useState<{ top: number; right: number } | null>(null);
 
-  // Détection de la largeur de la fenêtre pour la réactivité mobile
-  const [largeurFenetre, setLargeurFenetre] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
   useEffect(() => {
     // Met à jour la largeur de la fenêtre lors du redimensionnement
@@ -415,29 +545,22 @@ export function BacktestWorkspace() {
     setInitialisantResolution(false);
   }, [actif, paireCloud, journalDest, openNewTradeWithPrefill, capturerGraphique]);
 
-  // Hook pour observer l'ouverture d'une nouvelle position active (Étape 1)
+  // Hook pour observer l'ouverture d'une nouvelle position active (Étape 1) - Déclenchement auto désactivé
   const lastPositionRef = useRef<PositionSimulee | null>(null);
   useEffect(() => {
-    if (positionActive && positionActive !== lastPositionRef.current && !positionActive.planificationEnregistree && !positionActive.estCloturee) {
-      lastPositionRef.current = positionActive;
-      initialiserPlanificationTrade(positionActive);
-    }
     if (!positionActive) {
       lastPositionRef.current = null;
     }
-  }, [positionActive, initialiserPlanificationTrade]);
+  }, [positionActive]);
 
-  // Hook pour observer la clôture d'une position active (Étape 2)
+  // Hook pour observer la clôture d'une position active (Étape 2) - Déclenchement auto désactivé
   const lastClotureRef = useRef<boolean>(false);
   useEffect(() => {
-    if (positionActive && positionActive.estCloturee && !lastClotureRef.current) {
-      lastClotureRef.current = true;
-      initialiserResolutionTrade(positionActive);
-    }
     if (!positionActive || !positionActive.estCloturee) {
       lastClotureRef.current = false;
     }
-  }, [positionActive, initialiserResolutionTrade]);
+  }, [positionActive]);
+
 
   // ─── Raccourcis clavier ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -827,21 +950,7 @@ export function BacktestWorkspace() {
       {/* ══════════════════════════════════════════════════════════ */}
       <div className={`flex items-center gap-2 px-4 h-12 border-b flex-shrink-0 overflow-x-auto whitespace-nowrap scrollbar-none ${C.bgHeader}`}>
 
-        {/* Boutons Timeframe */}
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          {TIMEFRAMES.map((tf) => (
-            <button
-              key={tf.value}
-              onClick={() => setTimeframe(tf.value)}
-              className={`px-2.5 py-1 text-[12px] font-medium rounded transition-colors
-                ${timeframe === tf.value ? C.btnActive : C.btnBase}`}
-            >
-              {tf.label}
-            </button>
-          ))}
-        </div>
 
-        <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
         {/* Sélection du journal de destination */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -916,35 +1025,9 @@ export function BacktestWorkspace() {
 
         <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
-        {/* ── Contrôles Replay ── */}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={() => setOutilActif(outilActif === 'replay-cut' ? null : 'replay-cut')}
-            title="Mode Replay — Cliquer sur une bougie du graphique pour démarrer le backtest à partir de ce point"
-            className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-colors
-              ${outilActif === 'replay-cut' ? C.btnActive : C.btnBase}`}
-          >
-            ✂️
-          </button>
-
-          <button onClick={revenirDebut} title="Retour au début"
-            className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-sm ${C.btnBase}`}>⏮</button>
-
-          <button onClick={() => avancerBougie()} title="Bougie précédente"
-            className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-sm ${C.btnBase}`}>⏪</button>
-
-          <button
-            onClick={() => setEstEnLecture(!estEnLecture)}
-            title={estEnLecture ? 'Pause (Espace)' : 'Lecture (Espace)'}
-            className={`w-9 h-8 flex items-center justify-center rounded text-sm font-bold transition-colors
-              ${estEnLecture ? 'bg-[#ff9800] text-white hover:bg-[#f57c00]' : 'bg-[#26a69a] text-white hover:bg-[#00897b]'}`}
-          >
-            {estEnLecture ? '⏸' : '▶'}
-          </button>
-
-          <button onClick={() => { setEstEnLecture(false); avancerBougie(); }} title="Bougie suivante (→)"
-            className={`w-8 h-8 flex items-center justify-center rounded transition-colors text-sm ${C.btnBase}`}>⏩</button>
-
+        {/* Sélecteur de vitesse de replay remis dans le header */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className={`text-[11px] ${C.textMuted}`}>Vitesse :</span>
           <select
             value={vitesseLecture}
             onChange={(e) => setVitesseLecture(Number(e.target.value))}
@@ -1038,8 +1121,38 @@ export function BacktestWorkspace() {
             >
               🔒 Clôturer ({pnlFlottant !== null ? `${pnlFlottant >= 0 ? '+' : ''}${pnlFlottant.toFixed(2)}%` : 'Active'})
             </button>
+
+            {/* Bouton manuel d'écriture du trade (au choix de l'utilisateur) */}
+            {!positionActive.estCloturee ? (
+              <button
+                onClick={() => initialiserPlanificationTrade(positionActive)}
+                disabled={initialisantPlanification}
+                className="flex-shrink-0 px-3 h-8 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[11px] font-bold rounded shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                title="Pré-remplir et ouvrir le journal pour planifier ce trade"
+              >
+                {initialisantPlanification ? (
+                  <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                  '📝 Planifier'
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => initialiserResolutionTrade(positionActive)}
+                disabled={initialisantResolution}
+                className="flex-shrink-0 px-3 h-8 bg-[#10b981] hover:bg-[#059669] text-white text-[11px] font-bold rounded shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                title="Pré-remplir et ouvrir le journal pour enregistrer le résultat"
+              >
+                {initialisantResolution ? (
+                  <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                  '📝 Enregistrer'
+                )}
+              </button>
+            )}
           </>
         )}
+
 
         <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
@@ -1099,7 +1212,124 @@ export function BacktestWorkspace() {
         </div>
 
         {/* ─── GRAPHIQUE PRINCIPAL ─── */}
-        <div className="flex-1 min-w-0 flex-shrink-0">
+        <div className="flex-1 min-w-0 flex-shrink-0 relative">
+          
+          {/* WIDGET UT (Timeframe) flottant et déplaçable par l'utilisateur */}
+          <div
+            style={
+              hasDraggedUt
+                ? { position: 'absolute', left: `${utPos.x}px`, top: `${utPos.y}px`, zIndex: 100 }
+                : { position: 'absolute', left: '80px', top: '20px', zIndex: 100 }
+            }
+            className={`flex items-center gap-1.5 p-1.5 rounded-lg border shadow-lg backdrop-blur-md select-none ${
+              theme === 'dark' ? 'bg-[#1e222d]/85 border-[#2a2e39]/90' : 'bg-white/85 border-[#e0e3eb]/90'
+            }`}
+          >
+            {/* Poignée de drag */}
+            <div
+              onMouseDown={handleDragStart}
+              onTouchStart={handleDragStart}
+              className={`cursor-grab active:cursor-grabbing px-1 text-xs select-none font-bold tracking-tight ${
+                theme === 'dark' ? 'text-[#787b86]' : 'text-[#9598a1]'
+              }`}
+              title="Maintenir pour déplacer le sélecteur d'UT"
+            >
+              ⋮⋮
+            </div>
+            
+            {/* Boutons d'UT */}
+            <div className="flex items-center gap-0.5">
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf.value}
+                  onClick={() => setTimeframe(tf.value)}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded transition-colors ${
+                    timeframe === tf.value ? C.btnActive : C.btnBase
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* DOCK FLOATING DE REPLAY (Déplaçable et facile d'accès tactile pour tablette, sans vitesse) */}
+          <div
+            style={
+              hasDraggedReplay
+                ? { position: 'absolute', left: `${replayPos.x}px`, top: `${replayPos.y}px`, zIndex: 90 }
+                : { position: 'absolute', right: '24px', bottom: '24px', zIndex: 90 }
+            }
+            className={`flex items-center gap-1.5 p-2 rounded-xl border shadow-2xl backdrop-blur-md select-none ${
+              theme === 'dark' ? 'bg-[#1e222d]/90 border-[#2a2e39]' : 'bg-white/90 border-[#e0e3eb]'
+            }`}
+          >
+            {/* Poignée de drag */}
+            <div
+              onMouseDown={handleDragReplayStart}
+              onTouchStart={handleDragReplayStart}
+              className={`cursor-grab active:cursor-grabbing px-1.5 py-1 text-xs select-none font-bold tracking-tight ${
+                theme === 'dark' ? 'text-[#787b86]' : 'text-[#9598a1]'
+              }`}
+              title="Maintenir pour déplacer les contrôles de Replay"
+            >
+              ⋮⋮
+            </div>
+
+            {/* Mode Replay / Découpe ✂️ */}
+            <button
+              onClick={() => setOutilActif(outilActif === 'replay-cut' ? null : 'replay-cut')}
+              title="Mode Replay — Cliquer sur une bougie pour démarrer"
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors ${
+                outilActif === 'replay-cut' ? C.btnActive : C.btnBase
+              }`}
+            >
+              ✂️
+            </button>
+
+            <div className={`w-px h-5 ${C.separator}`} />
+
+            {/* ⏮ Retour au début */}
+            <button
+              onClick={revenirDebut}
+              title="Retour au début"
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors ${C.btnBase}`}
+            >
+              ⏮
+            </button>
+
+            {/* ⏪ Reculer/Bougie précédente */}
+            <button
+              onClick={() => avancerBougie()}
+              title="Bougie précédente"
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors ${C.btnBase}`}
+            >
+              ⏪
+            </button>
+
+            {/* ▶ / ⏸ Play / Pause */}
+            <button
+              onClick={() => setEstEnLecture(!estEnLecture)}
+              title={estEnLecture ? 'Pause (Espace)' : 'Lecture (Espace)'}
+              className={`w-9 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all ${
+                estEnLecture ? 'bg-[#ff9800] text-white hover:bg-[#f57c00]' : 'bg-[#26a69a] text-white hover:bg-[#00897b]'
+              }`}
+            >
+              {estEnLecture ? '⏸' : '▶'}
+            </button>
+
+            {/* ⏩ Avancer / Bougie suivante */}
+            <button
+              onClick={() => {
+                setEstEnLecture(false);
+                avancerBougie();
+              }}
+              title="Bougie suivante (→)"
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-colors ${C.btnBase}`}
+            >
+              ⏩
+            </button>
+          </div>
           {erreur && (
             <div className={`border-b text-xs px-4 py-2 ${C.errBg}`}>
               ⚠️ {erreur}
