@@ -965,19 +965,14 @@ export function BacktestWorkspace() {
           <button
             ref={boutonRef}
             onClick={(evenement) => {
-              // Empêche la propagation du clic pour éviter que le listener global sur document
-              // ne referme immédiatement le menu qui vient de s'ouvrir.
               evenement.stopPropagation();
               const rect = boutonRef.current?.getBoundingClientRect();
               if (rect) {
-                // Calcule le positionnement fixed pour que le menu s'affiche
-                // juste en dessous du bouton, par-dessus l'overflow du header.
                 setPositionMenu({
                   top: rect.bottom + window.scrollY + 6,
                   right: window.innerWidth - rect.right - window.scrollX,
                 });
               }
-              console.log('📸 [Bouton] Clic détecté, bascule menu de', menuCaptureOuvert, 'à', !menuCaptureOuvert);
               setMenuCaptureOuvert(!menuCaptureOuvert);
             }}
             disabled={capturantManuel}
@@ -992,7 +987,6 @@ export function BacktestWorkspace() {
           </button>
 
           {menuCaptureOuvert && (
-            /* Menu déroulant - positionné en fixed pour outrepasser l'overflow-x-auto du header parent */
             <div 
               style={{
                 position: 'fixed',
@@ -1032,6 +1026,20 @@ export function BacktestWorkspace() {
             </div>
           )}
         </div>
+
+        {/* Bouton de clôture manuelle contextuel de la position active */}
+        {positionActive && (
+          <>
+            <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
+            <button
+              onClick={fermerPositionManuellement}
+              className="flex-shrink-0 px-3 h-8 bg-[#ef5350] hover:bg-[#e53935] text-white text-[11px] font-bold rounded shadow-sm transition-colors flex items-center gap-1.5"
+              title="Clôturer manuellement la position active"
+            >
+              🔒 Clôturer ({pnlFlottant !== null ? `${pnlFlottant >= 0 ? '+' : ''}${pnlFlottant.toFixed(2)}%` : 'Active'})
+            </button>
+          </>
+        )}
 
         <div className={`flex-shrink-0 h-5 w-px ${C.separator}`} />
 
@@ -1108,160 +1116,26 @@ export function BacktestWorkspace() {
           />
         </div>
 
-        {/* ─── PANEL DROIT : Position active + Historique OU TradeDrawer Inline ─── */}
-        {/* Se place en-dessous du graphique sur mobile, et à sa droite sur écran moyen (md) */}
-        <div className={`w-full ${isNewTradeOpen || initialisantPlanification || initialisantResolution ? 'md:w-[420px]' : 'md:w-[300px]'} flex flex-col border-t md:border-t-0 md:border-l flex-shrink-0 transition-all duration-300 ${C.bgPanel}`}>
-          {initialisantPlanification || initialisantResolution ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-3 text-center bg-surface">
-              <span className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"></span>
-              <p className="text-xs font-semibold text-txt">
-                {initialisantPlanification 
-                  ? "Planification : capture automatique du graphique..." 
-                  : "Résolution : capture automatique de clôture..."}
-              </p>
-              <p className="text-[10px] text-txt3">Veuillez patienter pendant l'upload...</p>
-            </div>
-          ) : isNewTradeOpen ? (
-            <TradeDrawer isInline={true} backtestMode={true} onCaptureGraphique={capturerGraphique} />
-          ) : (
-            <>
-              {/* Stats rapides de session */}
-              <div className={`px-4 py-3 border-b flex items-center gap-4 text-[11px] ${C.border}`}>
-                <div>
-                  <span className={C.textMuted}>Trades</span>
-                  <span className={`font-semibold ml-1.5 ${C.textNormal}`}>{historiqueSimule.length}</span>
-                </div>
-                <div>
-                  <span className={C.textMuted}>Winrate</span>
-                  <span className={`font-semibold ml-1.5 ${winrate >= 50 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>{winrate}%</span>
-                </div>
-                {pnlFlottant !== null && (
-                  <div className="ml-auto">
-                    <span className={C.textMuted}>PnL</span>
-                    <span className={`font-semibold font-mono ml-1 ${pnlFlottant >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
-                      {pnlFlottant >= 0 ? '+' : ''}{pnlFlottant.toFixed(2)}%
-                    </span>
-                  </div>
-                )}
+        {/* ─── PANEL DROIT : Uniquement affiché pour l'écriture/détail du TradeDrawer ─── */}
+        {/* L'historique et les statistiques passives ont été supprimés pour maximiser l'espace du graphique */}
+        {(isNewTradeOpen || initialisantPlanification || initialisantResolution) && (
+          <div className="w-full md:w-[420px] flex flex-col border-t md:border-t-0 md:border-l flex-shrink-0 transition-all duration-300 bg-surface">
+            {initialisantPlanification || initialisantResolution ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-3 text-center bg-surface">
+                <span className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"></span>
+                <p className="text-xs font-semibold text-txt">
+                  {initialisantPlanification 
+                    ? "Planification : capture automatique du graphique..." 
+                    : "Résolution : capture automatique de clôture..."}
+                </p>
+                <p className="text-[10px] text-txt3">Veuillez patienter pendant l'upload...</p>
               </div>
-
-              {/* Position active */}
-              {positionActive ? (
-                <div className={`px-4 py-3 border-b space-y-2 ${C.border}`}>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded uppercase
-                      ${positionActive.direction === 'long'
-                        ? 'bg-[#26a69a]/20 text-[#26a69a] border border-[#26a69a]/30'
-                        : 'bg-[#ef5350]/20 text-[#ef5350] border border-[#ef5350]/30'
-                      }`}>
-                      {positionActive.direction === 'long' ? '▲ LONG' : '▼ SHORT'}
-                    </span>
-                    <span className={`text-[10px] ${C.textMuted}`}>position active</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
-                    <div className={`p-2 rounded ${C.inputBg}`}>
-                      <div className={`text-[9px] uppercase mb-0.5 ${C.textMuted}`}>Entrée</div>
-                      <div className={C.textNormal}>{positionActive.prixEntree.toFixed(5)}</div>
-                    </div>
-                    <div className={`p-2 rounded ${C.inputBg}`}>
-                      <div className={`text-[9px] uppercase mb-0.5 ${C.textMuted}`}>Prix actuel</div>
-                      <div className={pnlFlottant && pnlFlottant >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}>{prixActuel.toFixed(5)}</div>
-                    </div>
-                    <div className="bg-red-950/40 p-2 rounded border border-red-800/30">
-                      <div className="text-red-400/70 text-[9px] uppercase mb-0.5">Stop Loss</div>
-                      <div className="text-red-400">{positionActive.stopLoss.toFixed(5)}</div>
-                    </div>
-                    <div className="bg-emerald-950/40 p-2 rounded border border-emerald-800/30">
-                      <div className="text-emerald-400/70 text-[9px] uppercase mb-0.5">Take Profit</div>
-                      <div className="text-emerald-400">{positionActive.takeProfit.toFixed(5)}</div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={fermerPositionManuellement}
-                    className="w-full py-2 bg-[#ef5350] hover:bg-[#e53935] text-white text-[11px] font-bold rounded transition-colors"
-                  >
-                    🔒 Clôturer la position
-                  </button>
-                </div>
-              ) : (
-                <div className={`px-4 py-4 border-b text-[11px] text-center ${C.border} ${C.textMuted}`}>
-                  <div className="text-2xl mb-2">📈</div>
-                  <p className="leading-relaxed">
-                    Sélectionne <strong className="text-[#26a69a]">▲ Long</strong> ou <strong className="text-[#ef5350]">▼ Short</strong> dans la barre et clique 3× sur le graphique pour poser ta position.
-                  </p>
-                </div>
-              )}
-
-              {/* Historique des trades simulés */}
-              <div className="flex-grow md:flex-1 md:overflow-y-auto">
-                <div className={`px-4 py-2 border-b text-[10px] uppercase tracking-wider font-semibold ${C.border} ${C.textMuted}`}>
-                  Historique de session
-                </div>
-
-                {historiqueSimule.length === 0 ? (
-                  <div className={`flex items-center justify-center h-32 text-[11px] text-center px-4 ${C.textMuted}`}>
-                    Les trades fermés apparaîtront ici.
-                  </div>
-                ) : (
-                  <div className={`space-y-0 divide-y ${C.divider}`}>
-                    {[...historiqueSimule].reverse().map((trade, idx) => {
-                      const realIdx = historiqueSimule.length - 1 - idx;
-                      const tradeUid = `${trade.dateEntree}-${trade.prixEntree}`;
-                      const estEnExport = exportantTradeId === tradeUid;
-                      return (
-                        <div key={realIdx} className={`px-3 py-2.5 transition-colors ${C.hoverRow}`}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase
-                              ${trade.direction === 'long' ? 'text-[#26a69a] bg-[#26a69a]/10' : 'text-[#ef5350] bg-[#ef5350]/10'}`}>
-                              {trade.direction === 'long' ? '▲' : '▼'} {trade.direction.toUpperCase()}
-                            </span>
-                            <span className={`text-[11px] font-bold font-mono
-                              ${trade.resultat === 'win' ? 'text-[#26a69a]' : trade.resultat === 'loss' ? 'text-[#ef5350]' : C.textMuted}`}>
-                              {trade.pnl !== undefined ? `${trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}%` : '—'}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => exporterVersJournal(trade)}
-                              disabled={exportantTradeId !== null}
-                              className="flex-grow py-1 bg-[#2962ff] hover:bg-[#2979ff] text-white text-[10px] font-bold rounded transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
-                            >
-                              {estEnExport ? '⌛' : '📤 Exporter'}
-                            </button>
-                            <button
-                              onClick={() => supprimerTradeHistorique(realIdx)}
-                              className={`w-7 h-7 flex items-center justify-center rounded transition-colors text-xs ${C.btnBase} hover:text-[#ef5350]`}
-                              title="Supprimer ce trade de la session"
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        </div>
-                  );
-                })}
-              </div>
+            ) : (
+              <TradeDrawer isInline={true} backtestMode={true} onCaptureGraphique={capturerGraphique} />
             )}
           </div>
-
-          {/* Aide clavier */}
-          <div className={`px-4 py-3 border-t text-[9px] space-y-0.5 ${C.border} ${C.helpText}`}>
-            <div><kbd className={`px-1 rounded text-[9px] ${C.kbdBg}`}>Espace</kbd> Play / Pause</div>
-            <div><kbd className={`px-1 rounded text-[9px] ${C.kbdBg}`}>→</kbd> Bougie suivante</div>
-            <div><kbd className={`px-1 rounded text-[9px] ${C.kbdBg}`}>Esc</kbd> Quitter plein écran</div>
-            {outilActif && (
-              <div className="pt-1 text-[#2962ff] font-medium">
-                ✏️ Outil actif — clique sur le graphique
-              </div>
-            )}
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
-
-  </div>
-</div>
   );
 }
